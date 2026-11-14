@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Dungeon Tiger · GM</title>
+<link rel="icon" href="/icon.png">
 <style>
   :root { --bg:#14110f; --panel:#1e1a17; --line:#3a322b; --ink:#eae2d6; --dim:#9c8f80; --gold:#e0b354; --red:#d0574a; --green:#6fb46a; --blue:#6a9fd4; }
   * { box-sizing: border-box; }
@@ -55,11 +56,29 @@
   .upd { background:#2b3b1c; border:1px solid #4d7a2e; color:#cfe8b4; }
   .banner { padding:10px 14px; border-radius:8px; margin-bottom:12px; background:#26201a; border:1px solid var(--gold); }
   .spell { display:inline-block; }
+
+  /* pixel-art look, shared with Note Tiger */
+  @font-face { font-family: "Pixelify Sans"; src: url(/fonts/pixelify-sans-400.woff2) format("woff2"); font-weight: 400 500; font-display: swap; }
+  @font-face { font-family: "Pixelify Sans"; src: url(/fonts/pixelify-sans-700.woff2) format("woff2"); font-weight: 600 800; font-display: swap; }
+  body { background-image: linear-gradient(45deg, #ffffff05 25%, transparent 25%, transparent 75%, #ffffff05 75%), linear-gradient(45deg, #ffffff05 25%, transparent 25%, transparent 75%, #ffffff05 75%);
+    background-size: 8px 8px; background-position: 0 0, 4px 4px; }
+  header { background: var(--panel); border-bottom: 3px solid #0b0807; box-shadow: 0 3px 0 #2a231d; }
+  header h1 { font-family: "Pixelify Sans", Georgia, serif; font-size: 22px; text-transform: uppercase; letter-spacing: 1px; display: flex; align-items: center; gap: 10px; }
+  header h1 img { width: 34px; height: 34px; image-rendering: pixelated; }
+  .card h2, .banner, button { font-family: "Pixelify Sans", system-ui, sans-serif; }
+  .card h2 { font-size: 15px; letter-spacing: 1px; }
+  .card { border: 2px solid #0b0807; box-shadow: 4px 4px 0 #0b0807, inset 0 0 0 1px var(--line); border-radius: 3px; }
+  button { font-size: 15px; border: 2px solid #0b0807; border-radius: 2px; box-shadow: inset -3px -3px 0 #0000003d, inset 3px 3px 0 #ffffff1f, 2px 2px 0 #0b0807; }
+  button:active:not(:disabled) { transform: translate(2px, 2px); box-shadow: inset -3px -3px 0 #0000003d, inset 3px 3px 0 #ffffff1f; }
+  button.go { background: #f08a24; color: #1a0f05; } button.upd { background: #6fd47a; color: #0c1a0e; }
+  input, select { border: 2px solid var(--line); border-radius: 2px; background: #0f0d0b; }
+  .pill { border-radius: 2px; border-width: 2px; }
+  .bf { border: 2px solid #0b0807; box-shadow: 4px 4px 0 #0b0807; border-radius: 2px; }
 </style>
 </head>
 <body>
 <header>
-  <h1>🗝️ Dungeon Tiger</h1>
+  <h1><img src="/icon.png" alt="">Dungeon Tiger</h1>
   <span id="nt" class="pill">Note Tiger…</span>
   <span id="dc" class="pill">Discord…</span>
   <span id="upd"></span>

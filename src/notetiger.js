@@ -63,7 +63,7 @@ export function localCharacter({ level = 1, player = '', playerId = '', cls } = 
   return {
     id: `local-${Math.random().toString(36).slice(2, 8)}`, name, player, playerId, classes: [{ name: k, level }], abilities: t.ab, ac: t.ac,
     hp: { max: hp, current: hp }, profBonus: pb, saves: Object.fromEntries(t.saves.map((a) => [a, { prof: true }])),
-    attacks: t.attacks.map(([n, a, dice, type]) => ({ name: n, bonus: `+${m(a) + pb}`, damage: `${dice}+${m(a)} ${type}` })),
+    attacks: t.attacks.map(([n, a, dice, type]) => ({ name: n, bonus: `+${m(a) + pb}`, damage: `${dice}${m(a) >= 0 ? "+" : ""}${m(a)} ${type}` })),
     spellcasting: { ability: t.cast || '', slots, spells: t.spells.filter(([, l]) => l <= maxL).map(([n, l]) => ({ name: n, level: l })) },
     inventory: [{ name: 'Potion of Healing', qty: 1 }], features: level >= 5 && k === 'Fighter' ? [{ name: 'Extra Attack' }] : [], money: { gp: 10 },
   };

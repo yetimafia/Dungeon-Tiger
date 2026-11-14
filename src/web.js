@@ -37,6 +37,11 @@ export function startWeb({ delve, port = 3090, lan = false, app = {} }) {
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
         return res.end(fs.readFileSync(PAGE));
       }
+      if (/^\/fonts\/pixelify-sans-(400|700)\.woff2$/.test(url.pathname)) {
+        res.writeHead(200, { 'Content-Type': 'font/woff2', 'Cache-Control': 'max-age=604800' });
+        return res.end(fs.readFileSync(path.join(path.dirname(PAGE), url.pathname)));
+      }
+      if (url.pathname === '/icon.png') { res.writeHead(200, { 'Content-Type': 'image/png' }); return res.end(fs.readFileSync(path.join(path.dirname(PAGE), 'icon.png'))); }
       // Monster sprites: /sprite/<name>.png?scale=4, and a gallery of them all at /sprites
       if (p[0] === 'sprite' && p[1]) {
         const name = decodeURIComponent(p[1]).replace(/\.png$/, '').replace(/ [A-Z]$/, '');
