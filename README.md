@@ -14,22 +14,26 @@ It's a separate program from Note Tiger, but it **works with Note Tiger** when N
 
 If Note Tiger isn't running, the game still works. It uses simple stand-in characters instead, and skips the tracker and the recap.
 
-## Set up (Windows)
+## Install (Windows)
 
-1. Install **Node.js** (the LTS version) from https://nodejs.org.
-2. In **Note Tiger → Settings → Connections**: turn Connections on and copy the **key**.
-3. Double-click **start.bat**. The first time, it installs what it needs and opens a `.env` file in Notepad:
-   - `NOTE_TIGER_KEY`: paste the key from step 2.
-   - `DISCORD_TOKEN`: the Dungeon Tiger bot's token (see below). Leave it empty to use only the GM page.
-   - Save, close Notepad, and double-click **start.bat** again.
-4. The GM page opens at http://localhost:3090.
+1. Download **DungeonTiger-Setup-x.y.z.exe** from the [latest release](https://github.com/yetimafia/Dungeon-Tiger/releases/latest) and run it.
+   If Windows says it protected your PC, click **More info → Run anyway**. No admin rights or Node.js needed.
+2. Dungeon Tiger opens in its own window, and a door icon by the clock shows it's running.
+3. If Note Tiger is installed on the same PC, click **🔗 Link Note Tiger**. That's all it needs.
+   If Note Tiger is on another PC, open **⚙️ Settings** and paste its address and key from Note Tiger → Settings → Connections.
+4. For Discord, paste the Dungeon Tiger bot's token in **⚙️ Settings** (see below).
+
+**Updates:** when there's a new version, an **⬆️ Update** button shows at the top of the window. Click it and Dungeon Tiger
+closes, updates and reopens, keeping your settings. You can also check by hand in ⚙️ Settings.
+
+**Running from the code instead** (for testing changes): install Node.js, then double-click `start.bat`.
 
 ### The Discord bot (a second bot, separate from Note Tiger)
 
 1. Go to https://discord.com/developers/applications, then **New Application**, and name it "Dungeon Tiger".
-2. **Bot** tab: **Reset Token** and copy it into `DISCORD_TOKEN` in `.env`. Keep it secret.
+2. **Bot** tab: **Reset Token**, copy it, and paste it in Dungeon Tiger → ⚙️ Settings → Bot token. Keep it secret.
 3. **OAuth2 → URL Generator**: tick `bot` and `applications.commands`. Under Bot Permissions, tick Send Messages,
-   Create Public Threads, Send Messages in Threads, Read Message History, and Embed Links. Open the link it makes,
+   Create Public Threads, Send Messages in Threads, Read Message History, Embed Links, and Attach Files. Open the link it makes,
    then add the bot to your server.
 
 ## Playing
@@ -48,7 +52,9 @@ If Note Tiger isn't running, the game still works. It uses simple stand-in chara
 - Start a run yourself: **Test run** plays itself, which is handy for trying it out. **At the table**: you click each character's action.
 - GM buttons: Auto-play, Heal party, Skip this fight, Next floor, End run.
 
-## Settings (`.env`)
+## Settings
+
+All of these are in ⚙️ Settings. They're saved in `app\\.env` in the install folder.
 
 | Setting | What it does |
 |---|---|

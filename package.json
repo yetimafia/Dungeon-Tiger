@@ -1,11 +1,17 @@
 {
   "name": "dungeon-tiger",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "description": "A pick-up D&D dungeon crawl: random adventurers, five floors, a Discord bot and a GM page. Talks to Note Tiger.",
   "type": "module",
   "main": "src/main.js",
-  "scripts": { "start": "node src/main.js", "sim": "node tools/sim.mjs" },
+  "scripts": {
+    "start": "node src/main.js",
+    "sim": "node tools/sim.mjs"
+  },
   "license": "MIT",
-  "dependencies": { "discord.js": "^14.28.1", "dotenv": "^16.4.5" }
+  "dependencies": {
+    "discord.js": "^14.28.1",
+    "dotenv": "^16.4.5"
+  }
 }

@@ -25,7 +25,8 @@ const COMMAND = new SlashCommandBuilder().setName('dungeon').setDescription('Dun
   .addSubcommand((s) => s.setName('ask').setDescription('Ask a rules question (answered from your Note Tiger books)')
     .addStringOption((o) => o.setName('question').setDescription('What do you want to know?').setRequired(true)));
 
-export function startBot({ token, delve, turnSeconds = 120 }) {
+export function startBot({ token, delve, turnSeconds: ts = 120 }) {
+  const turnSecs = () => Number(typeof ts === 'function' ? ts() : ts) || 120;
   const client = new Client({ intents: [GatewayIntentBits.Guilds] });
   const lobbies = new Map();
   const byThread = new Map(); // thread id → run id
@@ -132,7 +133,7 @@ export function startBot({ token, delve, turnSeconds = 120 }) {
     ].slice(0, 25).map((o) => ({ ...o, label: clip(o.label, 100), description: clip(o.description, 100), value: o.value.slice(0, 100) }));
     const png = battlePng(run.combat.field, run.heroes, run.combat.monsters, { scale: 2, reach: run.reach(h), current: h.id, target });
     return {
-      content: `${h.player ? `<@${h.player}> ` : ''}**${h.name}'s turn** (\`${h.tag}\` on the map, ${bar(h)}, AC ${h.ac}). Round ${run.combat.round}.\nFoes: ${foeText}\n-# Pick a target, then an action: you walk up to it by yourself (${h.speed * 5} ft, shown in blue). ${turnSeconds}s, then the game plays this turn for you.`,
+      content: `${h.player ? `<@${h.player}> ` : ''}**${h.name}'s turn** (\`${h.tag}\` on the map, ${bar(h)}, AC ${h.ac}). Round ${run.combat.round}.\nFoes: ${foeText}\n-# Pick a target, then an action: you walk up to it by yourself (${h.speed * 5} ft, shown in blue). ${turnSecs()}s, then the game plays this turn for you.`,
       files: [{ attachment: png, name: 'battle.png' }],
       components: [
         row(new StringSelectMenuBuilder().setCustomId(`dd|${run.id}|target|${h.id}`).setPlaceholder('🎯 Target')
@@ -154,7 +155,7 @@ export function startBot({ token, delve, turnSeconds = 120 }) {
       if (run.waiting?.heroId !== h.id) return;
       run.say(`⏳ ${h.name} hesitates; instinct takes over.`, { story: false });
       run.autoTurn();
-    }, turnSeconds * 1000);
+    }, turnSecs() * 1000);
   }
 
   // ---------- slash commands ----------
@@ -292,6 +293,6 @@ export function startBot({ token, delve, turnSeconds = 120 }) {
     }
   }
 
-  client.login(token).catch((err) => console.error('[bot] couldn\'t log in:', err.message));
+  client.login(token).catch((err) => { console.error('[bot] couldn\'t log in:', err.message); client.emit('error', new Error(/token/i.test(err.message) ? 'The bot token is wrong. Copy it again from the Discord Developer Portal (Bot → Reset Token).' : err.message)); });
   return client;
 }

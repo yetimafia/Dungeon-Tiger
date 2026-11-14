@@ -6,10 +6,12 @@ import { fileURLToPath } from 'node:url';
 import { MONSTERS } from './dungeon.js';
 import { spritePng, bodyPlan, heroPng } from './sprites.js';
 import { battlePng } from './battlemap.js';
+import { SETTINGS, settings, writeEnv, findNoteTiger, linkNoteTiger, VERSION } from './config.js';
+import { updateStatus, checkForUpdate, installUpdate } from './updater.js';
 
 const PAGE = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public', 'index.html');
 
-export function startWeb({ delve, port = 3090, lan = false, settings = {} }) {
+export function startWeb({ delve, port = 3090, lan = false, app = {} }) {
   const send = (res, code, body) => { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(body)); };
   const readJson = (req) => new Promise((ok) => { let b = ''; req.on('data', (c) => { b += c; if (b.length > 1e5) req.destroy(); }); req.on('end', () => { try { ok(JSON.parse(b || '{}')); } catch { ok({}); } }); });
 
@@ -52,11 +54,40 @@ export function startWeb({ delve, port = 3090, lan = false, settings = {} }) {
           + all.map((m) => `<div><img src="/sprite/${encodeURIComponent(m.n)}.png" loading="lazy"><br>${m.n}<small>CR ${m.cr} · ${bodyPlan(m)}</small></div>`).join(''));
       }
       if (p[0] !== 'api') return send(res, 404, { error: 'Not found' });
+      // For the Windows launcher and installer.
+      if (p[1] === 'status') return send(res, 200, { ok: true, version: VERSION });
+      if (p[1] === 'stop' && req.method === 'POST') { send(res, 200, { ok: true }); return app.stop?.(); }
+      if (p[1] === 'restart' && req.method === 'POST') {
+        if (!process.env.DT_LAUNCHER) return send(res, 400, { error: 'Close the black window and start Dungeon Tiger again.' });
+        send(res, 200, { ok: true });
+        return setTimeout(() => process.exit(75), 300); // the launcher starts it again
+      }
+      // Settings
+      if (p[1] === 'settings' && req.method === 'GET') return send(res, 200, settingsView());
+      if (p[1] === 'settings' && p[2] === 'link' && req.method === 'POST') { linkNoteTiger(); await app.apply?.(); return send(res, 200, settingsView()); }
+      if (p[1] === 'settings' && req.method === 'POST') {
+        const b = await readJson(req);
+        const prev = settings();
+        const changes = {};
+        for (const def of SETTINGS) {
+          if (!(def.key in b)) continue;
+          let v = String(b[def.key] ?? '').replace(/[\r\n]/g, '').trim();
+          if (def.secret && !v && !b[`${def.key}_clear`]) continue; // empty secret box = keep it
+          changes[def.key] = v;
+        }
+        writeEnv(changes);
+        await app.apply?.();
+        return send(res, 200, { ...settingsView(), needsRestart: ('PORT' in changes && changes.PORT !== prev.PORT) || ('GM_LAN' in changes && changes.GM_LAN !== prev.GM_LAN), canRestart: Boolean(process.env.DT_LAUNCHER) });
+      }
+      // Updates
+      if (p[1] === 'update' && req.method === 'GET') return send(res, 200, updateStatus());
+      if (p[1] === 'update' && p[2] === 'check' && req.method === 'POST') return send(res, 200, await checkForUpdate());
+      if (p[1] === 'update' && p[2] === 'install' && req.method === 'POST') return send(res, 200, await installUpdate(async () => { await app.stop?.(); }));
       if (p[1] === 'state' && req.method === 'GET') {
         if (url.searchParams.get('check')) await delve.nt.check();
         return send(res, 200, {
-          noteTiger: { ok: delve.nt.ok, error: delve.nt.lastError, url: delve.nt.url, hasKey: !!delve.nt.key },
-          edition: delve.edition, discord: settings.discord?.() || 'off',
+          noteTiger: { ok: delve.nt.ok, error: delve.nt.lastError, url: delve.nt.url, hasKey: !!delve.nt.key }, noteTigerOnPC: { found: findNoteTiger().found },
+          edition: delve.edition, discord: app.discord?.() || { state: 'off' }, version: VERSION, update: updateStatus(),
           runs: delve.list().map((r) => ({ id: r.id, title: r.title, state: r.state, floor: r.floorN, source: r.source, party: r.heroes.map((h) => h.name), outcome: r.outcome, started: r.started })),
         });
       }
@@ -117,7 +148,7 @@ export function startWeb({ delve, port = 3090, lan = false, settings = {} }) {
       return send(res, 400, { error: err.message });
     }
   });
-  server.on('error', (err) => console.error(`[web] couldn't open port ${port}:`, err.message));
+  server.on('error', (err) => { console.error(`[web] couldn't open port ${port}:`, err.message); if (err.code === 'EADDRINUSE') process.exit(3); });
   server.listen(port, lan ? '0.0.0.0' : '127.0.0.1', () => console.log(`[web] GM page: http://localhost:${port}`));
   return server;
 }
@@ -125,6 +156,16 @@ export function startWeb({ delve, port = 3090, lan = false, settings = {} }) {
 function findMonster(name) {
   const k = name.toLowerCase();
   return MONSTERS['2024'].find((m) => m.n.toLowerCase() === k) || MONSTERS['2014'].find((m) => m.n.toLowerCase() === k);
+}
+
+function settingsView() {
+  const now = settings();
+  const nt = findNoteTiger();
+  return {
+    values: Object.fromEntries(SETTINGS.map((d) => [d.key, d.secret ? '' : now[d.key]])),
+    set: Object.fromEntries(SETTINGS.filter((d) => d.secret).map((d) => [d.key, Boolean(now[d.key])])),
+    noteTigerOnPC: { found: nt.found, enabled: nt.enabled, linked: nt.found && Boolean(nt.key) && nt.key === now.NOTE_TIGER_KEY },
+  };
 }
 
 // What the current character can do (for the GM page's turn buttons).

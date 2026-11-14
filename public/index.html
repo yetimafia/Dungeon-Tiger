@@ -49,6 +49,10 @@
   .lineup img.gone { filter:grayscale(1) brightness(.45); } .foe.sel { color:var(--gold); }
   .foe.gone { opacity:.35; text-decoration:line-through; cursor:default; }
   .empty { color:var(--dim); text-align:center; padding:40px 10px; }
+  .set label { margin-top:10px; } .set input[type=text], .set input[type=password], .set select { width:100%; }
+  .set .hint { color:var(--dim); font-size:12px; margin:2px 0 0; }
+  .set .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:0 14px; }
+  .upd { background:#2b3b1c; border:1px solid #4d7a2e; color:#cfe8b4; }
   .banner { padding:10px 14px; border-radius:8px; margin-bottom:12px; background:#26201a; border:1px solid var(--gold); }
   .spell { display:inline-block; }
 </style>
@@ -58,8 +62,10 @@
   <h1>🗝️ Dungeon Tiger</h1>
   <span id="nt" class="pill">Note Tiger…</span>
   <span id="dc" class="pill">Discord…</span>
+  <span id="upd"></span>
   <span style="flex:1"></span>
-  <button onclick="refresh(true)">Check connection</button>
+  <span id="ver" class="pill"></span>
+  <button onclick="openSettings()">⚙️ Settings</button>
 </header>
 <main>
   <section>
@@ -76,11 +82,12 @@
     <div class="card"><h2>Monsters</h2><a href="/sprites" target="_blank" style="color:var(--gold)">See all the monster sprites →</a></div>
     <div class="card"><h2>Runs</h2><div id="runs" class="runs"><div class="empty" style="padding:10px">None yet</div></div></div>
   </section>
-  <section id="center"><div class="card empty">Start a run, or pick one on the left.</div></section>
+  <section id="center-wrap"><div id="first"></div><div id="settings" class="card" style="display:none"></div><section id="center"><div class="card empty">Start a run, or pick one on the left.</div></section>
+  </section>
   <section id="right"></section>
 </main>
 <script>
-let sel = location.hash.slice(1) || null, data = null, target = null, busy = false;
+let sel = location.hash.slice(1) && location.hash !== '#settings' ? location.hash.slice(1) : null, data = null, target = null, busy = false;
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const md = (s) => esc(s).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
@@ -100,12 +107,75 @@ async function newRun() {
     refresh(); tick();
   } catch (e) { alert(e.message); }
 }
+async function update() {
+  if (!confirm('Download and install the update now? Dungeon Tiger will close and reopen in about a minute. Runs in progress are lost.')) return;
+  try { await api('update/install', {}); } catch (e) { alert(e.message); }
+  refresh();
+}
+async function link() {
+  try { await api('settings/link', {}); $('first').dataset.closed = 1; await refresh(true); } catch (e) { alert(e.message); }
+}
+const FIELDS = [
+  ['Note Tiger', [
+    ['NOTE_TIGER_URL', 'Address', 'text', 'From Note Tiger → Settings → Connections. On this PC: http://localhost:3081/v1'],
+    ['NOTE_TIGER_KEY', 'Key', 'password', 'From Note Tiger → Settings → Connections'],
+    ['NOTE_TIGER_SERVER', 'Discord server ID (optional)', 'text', 'Whose characters, books and #recaps to use. Empty = Note Tiger\'s first server.'],
+  ]],
+  ['Discord bot', [
+    ['DISCORD_TOKEN', 'Bot token', 'password', 'The Dungeon Tiger bot\'s own token (not Note Tiger\'s). Discord Developer Portal → your app → Bot → Reset Token.'],
+    ['TURN_SECONDS', 'Seconds to choose an action', 'number', 'Then the game plays the turn for them.'],
+  ]],
+  ['Game', [
+    ['EDITION', 'D&D rules', ['2024', '2014'], ''],
+    ['KEEP_CHARACTERS', 'Keep random characters in Note Tiger after a run', ['false', 'true'], ''],
+  ]],
+  ['This app', [
+    ['PORT', 'GM page port', 'number', 'Changing it needs a restart.'],
+    ['GM_LAN', 'Let other computers on my network open the GM page', ['false', 'true'], 'Changing it needs a restart.'],
+    ['UPDATE_CHECK', 'Check for updates', ['true', 'false'], ''],
+  ]],
+];
+async function openSettings() {
+  const st = await api('settings');
+  const u = await api('update');
+  const field = ([k, label, type, hint]) => `<label>${label}</label>${Array.isArray(type)
+    ? `<select data-k="${k}">${type.map((o) => `<option ${st.values[k] === o ? 'selected' : ''} value="${o}">${{ true: 'Yes', false: 'No' }[o] || o}</option>`).join('')}</select>`
+    : `<input type="${type}" data-k="${k}" value="${esc(st.values[k])}" placeholder="${type === 'password' ? (st.set[k] ? '•••••••• (saved; type to replace)' : 'not set') : ''}">`}${hint ? `<p class="hint">${hint}</p>` : ''}`;
+  $('settings').style.display = '';
+  $('settings').innerHTML = `<div class="set"><div class="row" style="justify-content:space-between"><h2 style="margin:0">Settings</h2><button onclick="$('settings').style.display='none'">✕</button></div>
+    ${st.noteTigerOnPC.found ? `<p class="hint" style="margin-top:8px">Note Tiger is installed on this PC${st.noteTigerOnPC.linked ? ' and linked ✓' : ''}. <a href="#" onclick="link();openSettings();return false" style="color:var(--gold)">${st.noteTigerOnPC.linked ? 'Link again' : 'Link it for me'}</a> (turns on its connection and copies the key here).</p>` : ''}
+    ${FIELDS.map(([title, fs]) => `<h2 style="margin-top:16px">${title}</h2>${fs.map(field).join('')}`).join('')}
+    <div class="row" style="margin-top:14px"><button class="go" onclick="saveSettings()">Save</button><span id="saved" style="color:var(--dim)"></span></div>
+    <h2 style="margin-top:18px">Updates</h2><p style="margin:0 0 6px">You have <b>${esc(u.current)}</b>.${u.latest ? ` The newest is <b>${esc(u.latest)}</b>.` : ''} ${u.error ? esc(u.error) : ''}</p>
+    <div class="row"><button onclick="checkUpd()">Check for updates</button>${u.newer ? `<button class="upd" onclick="update()">⬆️ Update to ${esc(u.latest)}</button>` : ''}</div></div>`;
+  window.scrollTo(0, 0);
+}
+async function saveSettings() {
+  const body = {};
+  document.querySelectorAll('#settings [data-k]').forEach((el) => { body[el.dataset.k] = el.value; });
+  try {
+    const r = await api('settings', body);
+    $('saved').textContent = r.needsRestart ? 'Saved. Restart Dungeon Tiger for the port/network change.' : 'Saved ✓';
+    if (r.needsRestart && r.canRestart && confirm('Restart Dungeon Tiger now?')) { await api('restart', {}); setTimeout(() => location.reload(), 6000); }
+    refresh(true);
+  } catch (e) { alert(e.message); }
+}
+async function checkUpd() { await api('update/check', {}); openSettings(); refresh(); }
 async function refresh(check) {
   const s = await api('state' + (check ? '?check=1' : ''));
   $('nt').className = 'pill ' + (s.noteTiger.ok ? 'ok' : 'bad');
   $('nt').textContent = s.noteTiger.ok ? 'Note Tiger connected' : `Note Tiger: ${s.noteTiger.hasKey ? (s.noteTiger.error || 'not checked') : 'no key set'}`;
-  $('dc').className = 'pill ' + (s.discord === 'on' ? 'ok' : '');
-  $('dc').textContent = s.discord === 'on' ? 'Discord bot online' : 'Discord bot ' + s.discord;
+  const dc = s.discord || {};
+  $('dc').className = 'pill ' + (dc.state === 'on' ? 'ok' : dc.state === 'error' ? 'bad' : '');
+  $('dc').textContent = dc.state === 'on' ? `Discord bot online${dc.name ? ` (${dc.name})` : ''}` : dc.state === 'starting' ? 'Discord bot starting…' : dc.state === 'error' ? `Discord bot: ${dc.error}` : 'Discord bot off (no token)';
+  $('ver').textContent = 'v' + s.version;
+  const u = s.update || {};
+  $('upd').innerHTML = u.download?.state === 'downloading' ? `<span class="pill">Downloading update… ${u.download.total ? Math.round(100 * u.download.got / u.download.total) : 0}%</span>`
+    : u.download?.state === 'starting' ? '<span class="pill">Installing the update: Dungeon Tiger will close and reopen</span>'
+    : u.newer ? `<button class="upd" onclick="update()">⬆️ Update to ${esc(u.latest)}</button>` : '';
+  $('first').innerHTML = !s.noteTiger.ok && !s.noteTiger.hasKey && !$('first').dataset.closed ? `<div class="card" style="border-color:var(--gold)"><h2>Link up with Note Tiger</h2>
+    <p style="margin:0 0 8px">Dungeon Tiger gets its random characters, rules answers and recaps from Note Tiger. ${s.noteTigerOnPC?.found ? 'Note Tiger is installed on this PC: one click links them.' : 'Note Tiger isn\'t installed on this PC: open Settings and paste its address and key (Note Tiger → Settings → Connections).'}</p>
+    <div class="row">${s.noteTigerOnPC?.found ? '<button class="go" onclick="link()">🔗 Link Note Tiger</button>' : ''}<button onclick="openSettings()">⚙️ Settings</button><button onclick="$(\'first\').dataset.closed=1;refresh()">Not now</button></div></div>` : '';
   $('edition').value = $('edition').dataset.set ? $('edition').value : s.edition; $('edition').dataset.set = 1;
   $('runs').innerHTML = s.runs.length ? s.runs.slice().reverse().map((r) => `<div class="${r.id === sel ? 'sel' : ''}" onclick="sel='${r.id}';location.hash=sel;target=null;refresh();tick()">
     ${esc(r.title)} <small>${{ discord: '💬 Discord', table: '🎲 table', test: '🤖 test' }[r.source] || r.source} · ${r.state === 'ended' ? esc(r.outcome) : `floor ${r.floor}, ${r.state}`}</small></div>`).join('') : '<div class="empty" style="padding:10px">None yet</div>';
@@ -195,6 +265,7 @@ async function tick() {
   try { data = await api(`runs/${sel}`); render(data); } catch (e) { $('center').innerHTML = `<div class="card empty">${esc(e.message)}</div>`; sel = null; }
 }
 refresh(true); setInterval(tick, 1000); setInterval(refresh, 4000);
+if (location.hash === '#settings') openSettings();
 </script>
 </body>
 </html>
