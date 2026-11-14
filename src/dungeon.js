@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { pick, shuffle, d } from './dice.js';
+import { roomDims } from './battlemap.js';
 
 const DATA = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'data');
 const load = (f) => JSON.parse(fs.readFileSync(path.join(DATA, f), 'utf8'));
@@ -121,12 +122,15 @@ export function makeFloor({ floor, edition, level, size }) {
   let n = 0;
   for (const [k, c] of cells) {
     const kind = kinds[k];
-    const room = { id: k, x: c.x, y: c.y, exits: c.exits, kind, name: flavors[n++ % flavors.length], seen: false, visited: false, cleared: false };
+    const room = { id: k, x: c.x, y: c.y, exits: c.exits, kind, name: flavors[n++ % flavors.length], seen: false, visited: false, cleared: false, dims: roomDims(kind, `${floor}|${k}|${Math.random()}`) };
     if (kind === 'fight') room.monsters = makeEncounter({ edition, level, size, floor });
     if (kind === 'stairs') room.monsters = makeEncounter({ edition, level, size, floor, kind: 'guard' });
     if (kind === 'boss') room.monsters = makeEncounter({ edition, level, size, floor, kind: 'boss' });
     if (['fight', 'treasure', 'stairs', 'boss'].includes(kind)) room.loot = makeLoot({ edition, floor, level, kind });
     if (kind === 'trap') room.trap = { ...pick(TRAPS), dc: 11 + floor, dice: `${Math.min(10, 1 + floor + Math.floor(level / 3))}d6` };
+    // Say how big it is: "a cramped mushroom grotto", "a vast echoing cistern".
+    const big = room.dims.w >= 14 ? 'vast' : room.dims.w >= 12 ? 'large' : room.dims.w <= 8 ? 'cramped' : '';
+    if (big) room.name = `a ${big} ${room.name.replace(/^an? /, '')}`;
     rooms[k] = room;
   }
   rooms[key(...start)].seen = true;

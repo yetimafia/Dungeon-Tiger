@@ -63,10 +63,11 @@ If Note Tiger isn't running, the game still works. It uses simple stand-in chara
 
 ## The battle map
 
-Every fight happens on a 12×8 grid of 5-foot squares, drawn in pixel art over a floor that matches the dungeon level:
+Every fight happens on a grid of 5-foot squares the size of the room, drawn in pixel art over a floor that matches the dungeon level:
 flagstones and barrels in the cellars, tombs and puddles in the crypts, giant mushrooms in the fungal deep, anvils and
 lava in the forge, and black crystal and runes at the bottom. Pillars, crates, tombs, mushrooms, lava and crystals block the way.
 
+- Rooms come in different sizes, from cramped 35×25-foot cells to vast 80×50-foot halls (the boss lair is always the biggest). Some are L-shaped, some have their corners cut off, some are rough caves, and some are halls with rows of pillars. Fights in a crowded room get a bigger room so everyone can move.
 - Heroes start by the door on the left (blue numbers), monsters on the right (red letters). Large monsters take 2×2 squares, Huge ones 3×3.
 - Everyone moves 30 feet (6 squares) a turn. Slow things like oozes and zombies move less.
 - Swords and claws reach the next square. Bows, crossbows and most spells shoot from afar. Shooting with an enemy right next to you is at disadvantage.

@@ -38,9 +38,9 @@
   .fn { display:flex; align-items:center; gap:8px; }
   .spr { width:48px; height:48px; image-rendering:pixelated; background:#2a231d; border-radius:6px; }
   .foe.gone .spr { filter:grayscale(1) brightness(.5); }
-  .bf { position:relative; width:100%; border-radius:8px; overflow:hidden; border:1px solid var(--line); }
+  .bf { position:relative; width:100%; max-width:calc(var(--bw) * 64px); margin:0 auto; border-radius:8px; overflow:hidden; border:1px solid var(--line); }
   .bf img { width:100%; display:block; image-rendering:pixelated; }
-  .bf .cells { position:absolute; left:0; right:0; bottom:0; top:11.111%; display:grid; grid-template-columns:repeat(12,1fr); grid-template-rows:repeat(8,1fr); }
+  .bf .cells { position:absolute; left:0; right:0; bottom:0; display:grid; }
   .bf .cells div { cursor:default; } .bf .cells div.r { cursor:pointer; } .bf .cells div.r:hover { background:#78c8ff40; }
   .bf .cells div.f { cursor:crosshair; } .bf .cells div.f:hover { outline:2px solid #ff6a5a; outline-offset:-2px; }
   .hspr { width:32px; height:32px; image-rendering:pixelated; vertical-align:middle; margin-right:6px; background:#2a231d; border-radius:4px; }
@@ -112,6 +112,7 @@ async function refresh(check) {
 }
 function mapSvg(d) {
   const W = 104, H = 80, bw = 78, bh = 50;
+  const box = (r) => { const dw = r.dims ? 40 + (r.dims.w - 7) / 9 * 50 : bw, dh = r.dims ? 30 + (r.dims.h - 5) / 5 * 26 : bh; return { x: r.x * W + 10 + (bw - dw) / 2, y: r.y * H + 10 + (bh - dh) / 2, w: dw, h: dh }; };
   const seen = d.rooms.filter((r) => r.seen || r.visited);
   const icon = { fight: '⚔️', stairs: '🪜', boss: '💀', rest: '🛏️', treasure: '💰', trap: '🪤', empty: '', start: '📍', '?': '?' };
   let lines = '', boxes = '';
@@ -123,7 +124,8 @@ function mapSvg(d) {
   for (const r of seen) {
     const here = r.id === d.here, done = r.cleared || r.kind === 'empty' || r.kind === 'start';
     const fill = here ? '#4a3a1c' : r.visited ? '#2a231d' : '#1b1714';
-    boxes += `<g ${r.visited || r.seen ? '' : ''}><rect x="${r.x * W + 10}" y="${r.y * H + 10}" width="${bw}" height="${bh}" rx="8" fill="${fill}" stroke="${here ? '#e0b354' : r.visited ? '#5c4f42' : '#3a322b'}" ${r.visited ? '' : 'stroke-dasharray="4 3"'} stroke-width="${here ? 2.5 : 1.5}"/>
+    const bx = box(r);
+    boxes += `<g><rect x="${bx.x}" y="${bx.y}" width="${bx.w}" height="${bx.h}" rx="6" fill="${fill}" stroke="${here ? '#e0b354' : r.visited ? '#5c4f42' : '#3a322b'}" ${r.visited ? '' : 'stroke-dasharray="4 3"'} stroke-width="${here ? 2.5 : 1.5}"/>
       <text x="${r.x * W + 10 + bw / 2}" y="${r.y * H + 10 + bh / 2 + 5}" text-anchor="middle" style="font-size:${here ? 13 : 16}px;opacity:${r.visited && done && r.kind !== 'stairs' && !(r.kind === 'rest' && !r.rested) ? .45 : 1}">${here ? '🧙 you' : r.visited ? (r.kind === 'treasure' && r.looted ? '' : icon[r.kind] || '') : (r.kind === 'stairs' || r.kind === 'boss' ? icon[r.kind] : '?')}</text></g>`;
   }
   return `<svg viewBox="0 0 ${5 * W + 14} ${4 * H + 14}" style="width:100%;max-height:360px">${lines}${boxes}</svg>`;
@@ -139,7 +141,7 @@ function battleView(d) {
     cells += `<div class="${cls}" title="${u ? esc(`${u.tag} ${u.name}`) : ''}" onclick="cell(${x},${y})"></div>`;
   }
   const v = `${d.log.length}-${d.turn?.id}-${b.steps}-${target}`;
-  return `<div class="bf"><img src="/api/runs/${d.id}/battle.png?target=${target || ''}&v=${encodeURIComponent(v)}" alt="Battle map"><div class="cells">${cells}</div></div>`;
+  return `<div class="bf" style="--bw:${b.w}"><img src="/api/runs/${d.id}/battle.png?target=${target || ''}&v=${encodeURIComponent(v)}" alt="Battle map"><div class="cells" style="top:${100 / (b.h + 1)}%;grid-template-columns:repeat(${b.w},1fr);grid-template-rows:repeat(${b.h},1fr)">${cells}</div></div>`;
 }
 function cell(x, y) {
   if (!data?.battle) return;

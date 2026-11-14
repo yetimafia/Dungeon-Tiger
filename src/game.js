@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { EventEmitter } from 'node:events';
 import { roll, avg, d20, mod, pick } from './dice.js';
 import { makeFloor, FLOORS, asciiMap } from './dungeon.js';
-import { makeField, placeAll, reachable, approach, retreat, dist, FP } from './battlemap.js';
+import { makeField, placeAll, reachable, approach, retreat, dist, FP, roomDims, biggerDims, freeSquares } from './battlemap.js';
 
 const DATA = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'data');
 const SPELLS = new Map(JSON.parse(fs.readFileSync(path.join(DATA, 'spells-combat.json'), 'utf8')).map((s) => [s.n.toLowerCase(), s]));
@@ -265,11 +265,19 @@ export class Run extends EventEmitter {
   // ---------- fights, on the battle map ----------
   startCombat(monsters) {
     this.state = 'combat';
-    const field = makeField(this.floorN, `${this.id}|${this.floorN}|${this.here}`);
     this.heroes.forEach((h, i) => Object.assign(h, { side: 'h', tag: String(i + 1), fp: 1, speed: 6, bx: null, by: null }));
     monsters.forEach((m, i) => Object.assign(m, { side: 'm', tag: String.fromCharCode(65 + i), fp: FP[m.size] || 1,
       speed: m.speed || (m.type === 'ooze' ? 3 : /zombie|mummy/i.test(m.n) ? 4 : m.size === 'Tiny' ? 4 : 6) }));
-    placeAll(field, this.standing(), monsters);
+    // The room's own size; a bigger one if the fight wouldn't fit (everyone needs some room to move).
+    const room = this.room();
+    let dims = room.dims || roomDims(room.kind, `${this.id}|${this.floorN}|${this.here}`);
+    const need = [...this.standing(), ...monsters].reduce((n, u) => n + (u.fp || 1) ** 2, 0) * 3;
+    let field;
+    for (let tries = 0; tries < 8; tries++) {
+      field = makeField(this.floorN, `${this.id}|${this.floorN}|${this.here}|${tries}`, dims);
+      if (freeSquares(field) >= need && placeAll(field, this.standing(), monsters)) break;
+      dims = biggerDims(dims);
+    }
     const order = [
       ...this.standing().map((h) => ({ kind: 'h', id: h.id, init: d20() + h.init + Math.random() / 10 })),
       ...monsters.map((m) => ({ kind: 'm', id: m.id, init: d20() + mod(m.ab[1]) + Math.random() / 10 })),
@@ -636,7 +644,7 @@ export class Run extends EventEmitter {
     return {
       id: this.id, title: this.title, edition: this.edition, level: this.level, state: this.state, floor: this.floorN, floors: FLOORS, floorName: this.floor.name,
       here: this.here, rooms: Object.values(this.floor.rooms).map((r) => ({ id: r.id, x: r.x, y: r.y, kind: r.seen ? r.kind : '?', seen: r.seen, visited: r.visited,
-        cleared: r.cleared, looted: r.looted, rested: r.rested, exits: r.exits, name: r.visited ? r.name : '' })),
+        cleared: r.cleared, looted: r.looted, rested: r.rested, exits: r.exits, name: r.visited ? r.name : '', dims: r.seen ? r.dims : null })),
       heroes: this.heroes.map(({ id, name, cls, species, hp, maxHp, ac, down, dead, ds, potions, slots, player, playerName, gold, items, tag }) => ({ id, name, cls, species, hp, maxHp, ac, down, dead, ds, potions, slots, player, playerName, gold, items, tag })),
       foes: (this.combat?.monsters || []).map(({ id, n, name, hp, maxHp, ac, cr, tag, bx, by, fp }) => ({ id, n, name, hp, maxHp, ac, cr, tag, bx, by, fp })),
       battle: this.combat ? {

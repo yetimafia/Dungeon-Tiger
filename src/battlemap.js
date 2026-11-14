@@ -4,7 +4,7 @@
 // 2×2 squares, Huge and bigger 3×3.
 import { Grid, ramp, hex, mix, rng, drawMonster, drawHero, png, scaleUp } from './sprites.js';
 
-export const BW = 12, BH = 8, TILE = 32, WALL = 1; // one row of wall drawn above the floor
+export const TILE = 32, WALL = 1; // one row of wall drawn above the floor
 export const FP = { Tiny: 1, Small: 1, Medium: 1, Large: 2, Huge: 3, Gargantuan: 3 };
 
 // ---------- the five looks ----------
@@ -18,39 +18,94 @@ export const THEMES = [
 export const themeFor = (floor) => THEMES[Math.max(0, Math.min(THEMES.length - 1, floor - 1))];
 
 // ---------- the field ----------
-export function makeField(floor, seed) {
-  const r = rng(`field|${seed}`);
+// Room sizes, small to big. Shapes: plain, corners cut off, L-shaped, a hall with rows of pillars, or a rough cave.
+export const SIZES = [[7, 5], [8, 6], [9, 6], [10, 7], [12, 8], [14, 9], [16, 10]];
+export function roomDims(kind, seed) {
+  const r = rng(`dims|${seed}`);
+  const pickOf = (a) => a[Math.floor(r() * a.length)];
+  let size;
+  if (kind === 'boss') size = [16, 10];
+  else if (kind === 'stairs') size = pickOf([[12, 8], [14, 9]]);
+  else if (kind === 'start' || kind === 'rest') size = pickOf([[7, 5], [8, 6]]);
+  else size = pickOf(SIZES.slice(0, 6));
+  const [w, h] = size;
+  const shapes = ['rect', 'rect', 'cut'];
+  if (w >= 9 && h >= 6) shapes.push('L', 'cave');
+  if (w >= 10) shapes.push('pillars');
+  return { w, h, shape: kind === 'boss' ? pickOf(['pillars', 'rect', 'cave']) : pickOf(shapes) };
+}
+// One size up (when a fight needs more room).
+export function biggerDims(d) {
+  const i = SIZES.findIndex(([w, h]) => w > d.w || h > d.h);
+  return i < 0 ? { ...d, shape: 'rect' } : { w: SIZES[i][0], h: SIZES[i][1], shape: d.shape === 'L' ? 'cut' : d.shape };
+}
+
+// blocked: 0 floor, 1 something in the way (barrel, pillar…), 2 solid rock/wall.
+export function makeField(floor, seed, dims = { w: 12, h: 8, shape: 'rect' }) {
+  const r = rng(`field|${seed}|${dims.w}x${dims.h}|${dims.shape}`);
   const theme = themeFor(floor);
-  const blocked = new Uint8Array(BW * BH);
+  const { w, h, shape } = dims;
+  const blocked = new Uint8Array(w * h);
+  const at = (x, y) => y * w + x;
   const things = [];
-  // A few obstacles in the middle columns, never walling anyone off (checked below).
-  const n = 3 + Math.floor(r() * 4);
-  for (let i = 0, tries = 0; i < n && tries < 60; tries++) {
-    const x = 3 + Math.floor(r() * 6), y = Math.floor(r() * BH);
-    if (blocked[y * BW + x]) continue;
-    blocked[y * BW + x] = 1;
-    if (!connected(blocked)) { blocked[y * BW + x] = 0; continue; }
+  // carve the shape (the three columns by the door always stay open)
+  if (shape === 'cut') for (const [cx, cy, sx, sy] of [[w - 1, 0, -1, 1], [w - 1, h - 1, -1, -1], [0, 0, 1, 1], [0, h - 1, 1, -1]].slice(0, 2 + Math.floor(r() * 3))) {
+    for (let k = 0; k < 2; k++) for (let j = 0; j < 2 - k; j++) { const x = cx + sx * j, y = cy + sy * k; if (x > 2 || cx > 2) blocked[at(x, y)] = 2; }
+  }
+  if (shape === 'L') {
+    const qw = Math.floor(w / 3) + Math.floor(r() * 2), qh = Math.floor(h / 2) - (r() < 0.5 ? 1 : 0), top = r() < 0.5;
+    for (let y = 0; y < qh; y++) for (let x = w - qw; x < w; x++) blocked[at(x, top ? y : h - 1 - y)] = 2;
+  }
+  if (shape === 'cave') {
+    for (let x = 3; x < w; x++) { if (r() < 0.45) blocked[at(x, 0)] = 2; if (r() < 0.45) blocked[at(x, h - 1)] = 2; }
+    for (let y = 0; y < h; y++) if (r() < 0.4) blocked[at(w - 1, y)] = 2;
+    for (let n = 0; n < Math.floor(w * h / 30); n++) { const x = 4 + Math.floor(r() * (w - 6)), y = 1 + Math.floor(r() * (h - 2)); blocked[at(x, y)] = 2; if (r() < 0.5 && x + 1 < w) blocked[at(x + 1, y)] = 2; }
+  }
+  if (shape === 'pillars') {
+    for (let x = 4; x < w - 2; x += 3) for (const y of [1, h - 2]) if (!blocked[at(x, y)]) { blocked[at(x, y)] = 1; things.push({ x, y, kind: 'pillar', block: true }); }
+  }
+  // floor cut off from the door becomes rock too
+  {
+    const seen = new Uint8Array(w * h); const q = [at(0, Math.floor(h / 2))]; seen[q[0]] = 1;
+    while (q.length) {
+      const i = q.pop(), x = i % w, y = Math.floor(i / w);
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nx = x + dx, ny = y + dy, j = at(nx, ny);
+        if (nx >= 0 && ny >= 0 && nx < w && ny < h && !blocked[j] && !seen[j]) { seen[j] = 1; q.push(j); }
+      }
+    }
+    for (let i = 0; i < blocked.length; i++) if (!blocked[i] && !seen[i]) blocked[i] = 2;
+  }
+  // obstacles in the middle, more in bigger rooms, never walling anyone off
+  const n = Math.max(1, Math.round((w * h) / 22 + r() * 2));
+  for (let i = 0, tries = 0; i < n && tries < 80; tries++) {
+    const x = 3 + Math.floor(r() * Math.max(1, w - 5)), y = Math.floor(r() * h);
+    if (blocked[at(x, y)]) continue;
+    blocked[at(x, y)] = 1;
+    if (!connected(blocked, w, h)) { blocked[at(x, y)] = 0; continue; }
     things.push({ x, y, kind: theme.blockers[Math.floor(r() * theme.blockers.length)], block: true });
     i++;
   }
-  for (let i = 0; i < 6; i++) {
-    const x = Math.floor(r() * BW), y = Math.floor(r() * BH);
-    if (!blocked[y * BW + x]) things.push({ x, y, kind: theme.decor[Math.floor(r() * theme.decor.length)], block: false });
+  for (let i = 0; i < Math.round(w * h / 14); i++) {
+    const x = Math.floor(r() * w), y = Math.floor(r() * h);
+    if (!blocked[at(x, y)]) things.push({ x, y, kind: theme.decor[Math.floor(r() * theme.decor.length)], block: false });
   }
-  return { w: BW, h: BH, blocked, things, theme: theme.name, floor, seed };
+  return { w, h, shape, blocked, things, theme: theme.name, floor, seed };
 }
-function connected(blocked) {
+function connected(blocked, w, h) {
   const start = blocked.indexOf(0);
-  const seen = new Uint8Array(BW * BH); const q = [start]; seen[start] = 1; let count = 1;
+  if (start < 0) return false;
+  const seen = new Uint8Array(w * h); const q = [start]; seen[start] = 1; let count = 1;
   while (q.length) {
-    const i = q.pop(), x = i % BW, y = Math.floor(i / BW);
+    const i = q.pop(), x = i % w, y = Math.floor(i / w);
     for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-      const nx = x + dx, ny = y + dy, j = ny * BW + nx;
-      if (nx >= 0 && ny >= 0 && nx < BW && ny < BH && !blocked[j] && !seen[j]) { seen[j] = 1; count++; q.push(j); }
+      const nx = x + dx, ny = y + dy, j = ny * w + nx;
+      if (nx >= 0 && ny >= 0 && nx < w && ny < h && !blocked[j] && !seen[j]) { seen[j] = 1; count++; q.push(j); }
     }
   }
   return count === blocked.reduce((n, b) => n + (b ? 0 : 1), 0);
 }
+export const freeSquares = (field) => field.blocked.reduce((n, b) => n + (b ? 0 : 1), 0);
 
 // ---------- positions ----------
 export const fpOf = (u) => u.fp || 1;
@@ -62,19 +117,19 @@ export function dist(a, b, ax = a.bx, ay = a.by) {
   return Math.max(dx, dy);
 }
 function occupancy(field, units, except) {
-  const occ = new Array(BW * BH).fill(null);
+  const occ = new Array(field.w * field.h).fill(null);
   for (const u of units) {
     if (u === except || u.bx == null) continue;
     const f = fpOf(u);
-    for (let j = 0; j < f; j++) for (let i = 0; i < f; i++) occ[(u.by + j) * BW + u.bx + i] = u;
+    for (let j = 0; j < f; j++) for (let i = 0; i < f; i++) occ[(u.by + j) * field.w + u.bx + i] = u;
   }
   return occ;
 }
 function fits(field, occ, u, x, y, { passAllies = false } = {}) {
   const f = fpOf(u);
-  if (x < 0 || y < 0 || x + f > BW || y + f > BH) return false;
+  if (x < 0 || y < 0 || x + f > field.w || y + f > field.h) return false;
   for (let j = 0; j < f; j++) for (let i = 0; i < f; i++) {
-    const k = (y + j) * BW + x + i;
+    const k = (y + j) * field.w + x + i;
     if (field.blocked[k]) return false;
     const o = occ[k];
     if (o && !(passAllies && o.side === u.side)) return false;
@@ -114,18 +169,22 @@ export function retreat(field, units, u, enemies, steps) {
   return opts.sort((a, b) => b.d - a.d || a.s - b.s)[0];
 }
 // Starting places: heroes in the left columns, monsters on the right.
-export function placeAll(field, heroes, monsters) {
+export function placeAll(field, heroes, monsters) { // returns false if someone didn't fit
   const units = [...heroes, ...monsters];
   units.forEach((u) => { u.bx = null; u.by = null; });
   const put = (u, cols) => {
     const occ = occupancy(field, units, u);
-    const ys = [...Array(BH).keys()].sort((a, b) => Math.abs(a - BH / 2 + 0.5) - Math.abs(b - BH / 2 + 0.5));
+    const ys = [...Array(field.h).keys()].sort((a, b) => Math.abs(a - field.h / 2 + 0.5) - Math.abs(b - field.h / 2 + 0.5));
     for (const x of cols) for (const y of ys) if (fits(field, occ, u, x, y)) { u.bx = x; u.by = y; return true; }
     return false;
   };
-  for (const h of heroes) put(h, [1, 0, 2, 3]) || put(h, [...Array(BW).keys()]);
+  for (const h of heroes) put(h, [1, 0, 2, 3]) || put(h, [...Array(field.w).keys()]);
   // biggest monsters first, as far right as they fit
-  for (const m of [...monsters].sort((a, b) => fpOf(b) - fpOf(a))) put(m, [BW - fpOf(m), BW - fpOf(m) - 1, BW - fpOf(m) - 2, 8, 7, 6]) || put(m, [...Array(BW).keys()].reverse());
+  for (const m of [...monsters].sort((a, b) => fpOf(b) - fpOf(a))) {
+    const cols = []; for (let x = field.w - fpOf(m); x >= Math.max(3, Math.floor(field.w / 2)); x--) cols.push(x);
+    put(m, cols) || put(m, [...Array(field.w).keys()].reverse());
+  }
+  return units.every((u) => u.bx != null);
 }
 
 // ---------- drawing ----------
@@ -251,6 +310,19 @@ function drawWall(cv, theme) {
   }
 }
 
+// Solid rock where the room's walls bend in: dark bricks, lit along the edge that faces the room.
+function rockTile(cv, theme, field, x, y, oy) {
+  const r = rng(`rock|${field.seed}|${x}|${y}`);
+  const wc = mix(hex(theme.wall), [0, 0, 0], 0.35), mc = mix(hex(theme.mortar), [0, 0, 0], 0.3);
+  const open = (dx, dy) => { const nx = x + dx, ny = y + dy; return nx >= 0 && ny >= 0 && nx < field.w && ny < field.h && field.blocked[ny * field.w + nx] !== 2; };
+  for (let j = 0; j < TILE; j++) for (let i = 0; i < TILE; i++) {
+    const row = Math.floor(j / 8), off = row % 2 ? 8 : 0;
+    let c = j % 8 === 7 || (i + off) % 16 === 15 ? mc : mix(wc, [0, 0, 0], (r() - 0.4) * 0.15);
+    if ((open(0, 1) && j > 25) || (open(-1, 0) && i < 2) || (open(1, 0) && i > 29) || (open(0, -1) && j < 2)) c = mix(hex(theme.wall), [255, 240, 220], 0.12);
+    cv.px(x * TILE + i, oy + y * TILE + j, c);
+  }
+}
+
 const spriteCache = new Map();
 function unitSprite(u) {
   const key = u.side === 'h' ? `h|${u.name}|${u.cls}` : `m|${u.n}`;
@@ -261,10 +333,11 @@ function unitSprite(u) {
 // The battle picture. opts: { scale, reach: Map("x,y" → steps) to highlight, current: unit id, target: unit id }
 export function renderBattle(field, heroes, monsters, { scale = 2, reach = null, current = null, target = null, labels = true } = {}) {
   const theme = THEMES.find((t) => t.name === field.theme) || THEMES[0];
-  const cv = new Canvas(BW * TILE, (BH + WALL) * TILE);
+  const cv = new Canvas(field.w * TILE, (field.h + WALL) * TILE);
   drawWall(cv, theme);
   const oy = WALL * TILE;
-  for (let y = 0; y < BH; y++) for (let x = 0; x < BW; x++) {
+  for (let y = 0; y < field.h; y++) for (let x = 0; x < field.w; x++) {
+    if (field.blocked[y * field.w + x] === 2) { rockTile(cv, theme, field, x, y, oy); continue; }
     const t = floorTile(theme, x, y);
     t.forEach((c, n) => cv.px(x * TILE + (n % TILE), oy + y * TILE + Math.floor(n / TILE), c));
   }
@@ -272,8 +345,13 @@ export function renderBattle(field, heroes, monsters, { scale = 2, reach = null,
   for (let y = 0; y < 10; y++) cv.rect(0, oy + y, cv.w, 1, [0, 0, 0], 0.35 * (1 - y / 10));
   for (const th of field.things.filter((t) => !t.block)) cv.sprite(thingSprite(th.kind, `${field.seed}${th.x}${th.y}`), th.x * TILE, oy + th.y * TILE, { alpha: 0.9 });
   // the grid
-  for (let x = 1; x < BW; x++) cv.rect(x * TILE, oy, 1, BH * TILE, [0, 0, 0], 0.22);
-  for (let y = 1; y < BH; y++) cv.rect(0, oy + y * TILE, cv.w, 1, [0, 0, 0], 0.22);
+  for (let y = 0; y < field.h; y++) for (let x = 0; x < field.w; x++) {
+    if (field.blocked[y * field.w + x] === 2) continue;
+    if (x > 0) cv.rect(x * TILE, oy + y * TILE, 1, TILE, [0, 0, 0], 0.22);
+    if (y > 0) cv.rect(x * TILE, oy + y * TILE, TILE, 1, [0, 0, 0], 0.22);
+    // shadow cast by rock on the square below it
+    if (y > 0 && field.blocked[(y - 1) * field.w + x] === 2) for (let j = 0; j < 8; j++) cv.rect(x * TILE, oy + y * TILE + j, TILE, 1, [0, 0, 0], 0.4 * (1 - j / 8));
+  }
   if (reach) for (const k of reach.keys()) { const [x, y] = k.split(',').map(Number); cv.rect(x * TILE + 1, oy + y * TILE + 1, TILE - 1, TILE - 1, [120, 200, 255], 0.18); }
   for (const th of field.things.filter((t) => t.block)) {
     cv.rect(th.x * TILE + 4, oy + th.y * TILE + 26, 24, 4, [0, 0, 0], 0.3);
