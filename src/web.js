@@ -4,7 +4,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { MONSTERS } from './dungeon.js';
-import { spritePng, bodyPlan } from './sprites.js';
+import { spritePng, bodyPlan, heroPng } from './sprites.js';
+import { battlePng } from './battlemap.js';
 
 const PAGE = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public', 'index.html');
 
@@ -74,6 +75,19 @@ export function startWeb({ delve, port = 3090, lan = false, settings = {} }) {
       }
       const run = delve.get(p[2]);
       if (!run) return send(res, 404, { error: 'That run is gone (finished runs are kept for an hour).' });
+      // The battle map picture, and the party's sprites.
+      if (req.method === 'GET' && p[3] === 'battle.png') {
+        if (!run.combat) return send(res, 404, { error: 'No fight' });
+        const w = run.waiting && run.hero(run.waiting.heroId);
+        res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'no-store' });
+        return res.end(battlePng(run.combat.field, run.heroes, run.combat.monsters, { scale: 2, reach: w ? run.reach(w) : null, current: run.current()?.id, target: url.searchParams.get('target') }));
+      }
+      if (req.method === 'GET' && p[3] === 'hero' && p[4]) {
+        const h = run.hero(decodeURIComponent(p[4]).replace(/\.png$/, ''));
+        if (!h) return send(res, 404, { error: 'No such hero' });
+        res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'max-age=3600' });
+        return res.end(heroPng(h));
+      }
       if (req.method === 'GET' && !p[3]) return send(res, 200, { ...run.snapshot(), autoplaying: !!run.autoplaying, recap: run.recap || null, actions: actionsFor(run) });
       if (req.method !== 'POST') return send(res, 405, { error: 'Use POST' });
       const b = await readJson(req);

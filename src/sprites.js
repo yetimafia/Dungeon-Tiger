@@ -129,7 +129,8 @@ function palette(m, plan, r) {
 }
 
 // ---------- body plans ----------
-const SIZE = { Tiny: 0.62, Small: 0.78, Medium: 0.9, Large: 1, Huge: 1, Gargantuan: 1 };
+export { Grid, ramp, hex, mix, rng };
+export const SIZE = { Tiny: 0.62, Small: 0.78, Medium: 0.9, Large: 1, Huge: 1, Gargantuan: 1 };
 
 function humanoid(g, r, n, o = {}) {
   const bulk = o.bulk || 0;
@@ -156,7 +157,7 @@ function humanoid(g, r, n, o = {}) {
   g.dot(14, hy + 0.5, 'eye'); g.dot(18, hy + 0.5, 'eye');
   if (/gnoll|bugbear|kobold|lizardfolk|kenku|werewolf|wererat|jackalwere/.test(n)) g.ell(16, hy + 3, 2.5, 2, 'body'); // snout
   // something in the hand
-  const w = archer ? 'bow' : caster ? 'staff' : armored ? (r() < 0.5 ? 'sword' : 'axe') : ['sword', 'club', 'spear', 'dagger', 'axe', 'none'][Math.floor(r() * 6)];
+  const w = /barbarian/.test(n) ? 'axe' : /rogue|bard/.test(n) ? 'dagger' : /monk/.test(n) ? 'none' : archer ? 'bow' : caster ? 'staff' : armored ? (r() < 0.5 ? 'sword' : 'axe') : ['sword', 'club', 'spear', 'dagger', 'axe', 'none'][Math.floor(r() * 6)];
   const hx = 24 + bulk, hy2 = 22;
   if (w === 'sword') { g.line(hx, hy2, hx + 1, 5, 'metal', 1.6); g.rect(hx - 2, hy2 - 2, 5, 1.4, 'accent'); }
   if (w === 'axe') { g.line(hx, hy2 + 3, hx, 7, 'accent', 1.4); g.ell(hx + 2, 9, 2.5, 3, 'metal'); }
@@ -419,13 +420,13 @@ function giant(g, r, n) {
 const PLANS = { humanoid, zombie, skeleton, ghost, quad, low, bird, bug, snake, dragon, ooze, plant, elemental, construct, eye, swarm, fiend, angel, giant };
 
 // ---------- shading, outline, pixels ----------
-export function drawMonster(m) {
-  const r = rng(m.n);
-  const plan = bodyPlan(m);
-  const n = m.n.toLowerCase();
+export function drawMonster(m, { words, seed } = {}) {
+  const r = rng(seed || m.n);
+  const plan = words ? 'humanoid' : bodyPlan(m);
+  const n = (words || m.n).toLowerCase();
   const g = new Grid(plan === 'swarm' || plan === 'eye' ? 1 : SIZE[m.size] ?? 0.9);
   PLANS[plan](g, r, n, m.type);
-  const pal = palette(m, plan, r);
+  const pal = palette(words ? { ...m, n: `${words} ${m.n}` } : m, plan, r);
   const names = Object.keys(M);
   const ramps = Object.fromEntries(names.map((k) => [M[k], ramp(pal[k])]));
   const flat = new Set([M.eye, M.dark, M.glow]);
@@ -466,13 +467,31 @@ export function png(rgba, w, h) {
   return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ihdr), chunk('IDAT', zlib.deflateSync(raw)), chunk('IEND', Buffer.alloc(0))]);
 }
 // Bigger copies keep the hard pixel edges (Discord would blur a 32px image).
-function scaleUp(rgba, w, h, k) {
+export function scaleUp(rgba, w, h, k) {
   const out = new Uint8Array(w * k * h * k * 4);
   for (let y = 0; y < h * k; y++) for (let x = 0; x < w * k; x++) {
     const s = (Math.floor(y / k) * w + Math.floor(x / k)) * 4, d = (y * w * k + x) * 4;
     out[d] = rgba[s]; out[d + 1] = rgba[s + 1]; out[d + 2] = rgba[s + 2]; out[d + 3] = rgba[s + 3];
   }
   return out;
+}
+
+// The party: a person dressed for their class and people (a wizard's robe and staff, a fighter's armour, elf ears…).
+const CLASS_WORDS = { wizard: 'wizard', sorcerer: 'mage', warlock: 'warlock', cleric: 'priest', druid: 'druid', fighter: 'knight', paladin: 'knight',
+  ranger: 'ranger', rogue: 'rogue', barbarian: 'barbarian', monk: 'monk', bard: 'bard', artificer: 'veteran' };
+export function heroWords(h) {
+  const cls = String(h.cls || '').toLowerCase().split(/[\s/]/)[0];
+  const sp = String(h.species || '').toLowerCase();
+  const kin = /elf/.test(sp) ? 'elf' : /orc/.test(sp) ? 'orc' : /gnome/.test(sp) ? 'gnome' : /tiefling/.test(sp) ? 'tiefling' : /dragonborn/.test(sp) ? 'kobold' : /goliath/.test(sp) ? 'stone' : '';
+  return `${CLASS_WORDS[cls] || 'warrior'} ${kin}`;
+}
+export function drawHero(h) {
+  return drawMonster({ n: h.name, type: 'humanoid', size: /halfling|gnome/i.test(h.species || '') ? 'Small' : 'Medium' }, { words: heroWords(h), seed: h.name });
+}
+export function heroPng(h, scale = 1) {
+  const key = `hero|${h.name}|${h.cls}|${h.species}|${scale}`;
+  if (!cache.has(key)) { const { rgba } = drawHero(h); cache.set(key, png(scale > 1 ? scaleUp(rgba, N, N, scale) : rgba, N * scale, N * scale)); }
+  return cache.get(key);
 }
 
 const cache = new Map();

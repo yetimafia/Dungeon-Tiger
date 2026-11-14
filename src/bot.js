@@ -6,7 +6,7 @@ import {
 } from 'discord.js';
 import { castable } from './game.js';
 import { FLOORS } from './dungeon.js';
-import { lineupPng } from './sprites.js';
+import { battlePng, dist } from './battlemap.js';
 
 const EPH = { flags: MessageFlags.Ephemeral };
 const btn = (id, label, style = ButtonStyle.Secondary, disabled = false) => new ButtonBuilder().setCustomId(id).setLabel(label.slice(0, 80)).setStyle(style).setDisabled(disabled);
@@ -72,7 +72,11 @@ export function startBot({ token, delve, turnSeconds = 120 }) {
       setTimeout(() => queue(async () => { panelSoon = false; await flush(); if (run.state === 'explore') await postPanel(run); }), 800);
     });
     // Show what they're up against.
-    run.on('fight', (ms) => queue(async () => { await flush(); await channel.send({ files: [{ attachment: lineupPng(ms), name: 'foes.png' }] }); }));
+    run.on('fight', () => queue(async () => {
+      await flush();
+      if (!run.combat) return;
+      await channel.send({ content: `-# Battle map: heroes are blue numbers, monsters red letters. One square is 5 feet.`, files: [{ attachment: battlePng(run.combat.field, run.heroes, run.combat.monsters, { scale: 2 }), name: 'battle.png' }] });
+    }));
     run.on('turn', (h) => queue(async () => { await flush(); await postTurn(run, h); }));
     run.on('end', () => queue(async () => {
       clearTimeout(out.turnTimer);
@@ -118,20 +122,24 @@ export function startBot({ token, delve, turnSeconds = 120 }) {
 
   function turnView(run, h) {
     const foes = run.foes();
-    const target = run.ui.target[h.id] && foes.find((m) => m.id === run.ui.target[h.id]) ? run.ui.target[h.id] : [...foes].sort((a, b) => a.hp - b.hp)[0]?.id;
+    const target = run.ui.target[h.id] && foes.find((m) => m.id === run.ui.target[h.id]) ? run.ui.target[h.id] : [...foes].sort((a, b) => dist(h, a) - dist(h, b) || a.hp - b.hp)[0]?.id;
     run.ui.target[h.id] = target;
-    const foeText = foes.map((m) => `${m.id === target ? '🎯 ' : ''}**${m.name}** (AC ${m.ac}, ${m.hp}/${m.maxHp} HP)`).join(' · ');
+    const sq = (m) => `${dist(h, m) * 5} ft`;
+    const foeText = foes.map((m) => `${m.id === target ? '🎯 ' : ''}\`${m.tag}\` **${m.name}** (AC ${m.ac}, ${m.hp}/${m.maxHp} HP, ${sq(m)})`).join(' · ');
     const acts = [
-      ...h.attacks.map((a) => ({ label: `⚔️ ${a.name}`, description: `${a.bonus >= 0 ? '+' : ''}${a.bonus} to hit, ${a.dice} ${a.type}${h.perTurn > 1 ? `, ${h.perTurn} attacks` : ''}`, value: `w:${a.name}` })),
-      ...castable(h).map((s) => ({ label: `✨ ${s.name}`, description: `${s.level ? `level ${s.level}` : 'cantrip'}${s.data.heal ? ', heals the most hurt ally' : s.data.aoe ? ', hits a group' : ''}`, value: `s:${s.name}` })),
+      ...h.attacks.map((a) => ({ label: `⚔️ ${a.name}`, description: `${a.bonus >= 0 ? '+' : ''}${a.bonus} to hit, ${a.dice} ${a.type}${h.perTurn > 1 ? `, ${h.perTurn} attacks` : ''}${a.ranged ? ', ranged' : ''}`, value: `w:${a.name}` })),
+      ...castable(h).map((s) => ({ label: `✨ ${s.name}`, description: `${s.level ? `level ${s.level}` : 'cantrip'}${s.data.heal ? ', heals the most hurt ally' : s.data.aoe ? ', hits an area' : ''}`, value: `s:${s.name}` })),
     ].slice(0, 25).map((o) => ({ ...o, label: clip(o.label, 100), description: clip(o.description, 100), value: o.value.slice(0, 100) }));
+    const png = battlePng(run.combat.field, run.heroes, run.combat.monsters, { scale: 2, reach: run.reach(h), current: h.id, target });
     return {
-      content: `${h.player ? `<@${h.player}> ` : ''}**${h.name}'s turn** (${bar(h)}, AC ${h.ac}). Round ${run.combat.round}.\nFoes: ${foeText}\n-# Pick a target, then an action. ${turnSeconds}s, then the game plays this turn for you.`,
+      content: `${h.player ? `<@${h.player}> ` : ''}**${h.name}'s turn** (\`${h.tag}\` on the map, ${bar(h)}, AC ${h.ac}). Round ${run.combat.round}.\nFoes: ${foeText}\n-# Pick a target, then an action: you walk up to it by yourself (${h.speed * 5} ft, shown in blue). ${turnSeconds}s, then the game plays this turn for you.`,
+      files: [{ attachment: png, name: 'battle.png' }],
       components: [
         row(new StringSelectMenuBuilder().setCustomId(`dd|${run.id}|target|${h.id}`).setPlaceholder('🎯 Target')
-          .addOptions(foes.slice(0, 25).map((m) => ({ label: clip(`${m.name} (${m.hp}/${m.maxHp} HP)`, 100), value: m.id, default: m.id === target })))),
+          .addOptions(foes.slice(0, 25).map((m) => ({ label: clip(`${m.tag}: ${m.name} (${m.hp}/${m.maxHp} HP, ${sq(m)})`, 100), value: m.id, default: m.id === target })))),
         row(new StringSelectMenuBuilder().setCustomId(`dd|${run.id}|act|${h.id}`).setPlaceholder('Choose an action').addOptions(acts)),
-        row(btn(`dd|${run.id}|dodge|${h.id}`, '🛡️ Dodge'), btn(`dd|${run.id}|drink|${h.id}`, `🧪 Potion (${h.potions})`, ButtonStyle.Secondary, !h.potions),
+        row(btn(`dd|${run.id}|dodge|${h.id}`, '🛡️ Dodge'), btn(`dd|${run.id}|back|${h.id}`, '🏃 Back off & dodge'),
+          btn(`dd|${run.id}|drink|${h.id}`, `🧪 Potion (${h.potions})`, ButtonStyle.Secondary, !h.potions),
           btn(`dd|${run.id}|auto|${h.id}`, '🤖 Play it for me')),
       ],
       allowedMentions: { users: h.player ? [h.player] : [] },
@@ -184,7 +192,7 @@ export function startBot({ token, delve, turnSeconds = 120 }) {
     const run = delve.get(byThread.get(i.channelId));
     if (!run) return i.reply({ content: 'There\'s no run in this thread. Start one with `/dungeon start`.', ...EPH });
     if (sub === 'map') {
-      const extra = run.state === 'combat' ? { files: [{ attachment: lineupPng(run.combat.monsters, { dead: new Set(run.combat.monsters.filter((m) => m.hp <= 0).map((m) => m.id)) }), name: 'foes.png' }] } : {};
+      const extra = run.state === 'combat' ? { files: [{ attachment: battlePng(run.combat.field, run.heroes, run.combat.monsters, { scale: 2, current: run.current()?.id }), name: 'battle.png' }] } : {};
       return i.reply({ ...panelView(run), components: [], ...extra });
     }
     if (sub === 'end') {
@@ -203,17 +211,18 @@ export function startBot({ token, delve, turnSeconds = 120 }) {
     const inParty = run.heroes.some((h) => h.player === i.user.id) || i.user.id === run.ownerId;
 
     // Fights: only the character's player (or whoever started the run) can choose.
-    if (['target', 'act', 'dodge', 'drink', 'auto'].includes(what)) {
+    if (['target', 'act', 'dodge', 'back', 'drink', 'auto'].includes(what)) {
       const h = run.hero(arg);
       if (!h || run.waiting?.heroId !== h.id) return i.reply({ content: 'That turn is over.', ...EPH });
       if (h.player !== i.user.id && i.user.id !== run.ownerId) return i.reply({ content: `That's ${h.playerName || 'someone else'}'s character.`, ...EPH });
-      if (what === 'target') { run.ui.target[h.id] = i.values[0]; return i.update(turnView(run, h)); }
+      if (what === 'target') { run.ui.target[h.id] = i.values[0]; return i.update({ ...turnView(run, h), attachments: [] }); }
       clearTimeout(run.ui.turnTimer);
       const target = run.ui.target[h.id];
       await i.update({ components: [] });
       run.ui.turnMsg = null;
       if (what === 'auto') return run.autoTurn();
       if (what === 'dodge') return run.act(h.id, { type: 'dodge' });
+      if (what === 'back') return run.act(h.id, { type: 'retreat' });
       if (what === 'drink') { const down = run.standing().find((x) => x.down); return run.act(h.id, { type: 'potion', target: down?.id }); }
       const [kind, ...rest] = i.values[0].split(':');
       const name = rest.join(':');

@@ -61,14 +61,26 @@ If Note Tiger isn't running, the game still works. It uses simple stand-in chara
 | `TURN_SECONDS` | How long a Discord player has to choose an action (120). |
 | `KEEP_CHARACTERS` | `true` keeps the random characters in Note Tiger after the run. They're removed by default. |
 
+## The battle map
+
+Every fight happens on a 12×8 grid of 5-foot squares, drawn in pixel art over a floor that matches the dungeon level:
+flagstones and barrels in the cellars, tombs and puddles in the crypts, giant mushrooms in the fungal deep, anvils and
+lava in the forge, and black crystal and runes at the bottom. Pillars, crates, tombs, mushrooms, lava and crystals block the way.
+
+- Heroes start by the door on the left (blue numbers), monsters on the right (red letters). Large monsters take 2×2 squares, Huge ones 3×3.
+- Everyone moves 30 feet (6 squares) a turn. Slow things like oozes and zombies move less.
+- Swords and claws reach the next square. Bows, crossbows and most spells shoot from afar. Shooting with an enemy right next to you is at disadvantage.
+- Area spells and breath weapons hit everyone close together. Fireball has a 20-foot radius; Burning Hands bursts out from the caster.
+- **In Discord:** on your turn you get the map with the squares you can reach shown in blue. Pick a target and an action, and your character walks up to it by themselves. **🏃 Back off & dodge** moves you away from the monsters.
+- **On the GM page:** click a blue square to move there, click a monster to target it, then pick an action.
+
 ## Monster sprites
 
 Every monster (all 364 from the free D&D rules) has its own 32×32 pixel-art sprite. They're drawn by code from the
 monster's body type and name: dragons get wings and their colour, "frost" and "fire" monsters get icy or fiery colours,
 and so on. The same monster always looks the same.
 
-- In Discord, a picture of the foes is posted when a fight starts. `/dungeon map` during a fight shows who's still standing.
-- On the GM page, the foes appear above the map and in the Foes list (beaten ones turn grey).
+- They stand on the battle map, and the party gets sprites too, dressed for their class (robes and staffs, armour, bows…).
 - **http://localhost:3090/sprites** shows all of them. A single sprite is at `/sprite/<Monster Name>.png`; add `?scale=4` for a bigger one.
 
 ## How the dungeon works

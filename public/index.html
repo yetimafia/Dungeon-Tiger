@@ -38,6 +38,12 @@
   .fn { display:flex; align-items:center; gap:8px; }
   .spr { width:48px; height:48px; image-rendering:pixelated; background:#2a231d; border-radius:6px; }
   .foe.gone .spr { filter:grayscale(1) brightness(.5); }
+  .bf { position:relative; width:100%; border-radius:8px; overflow:hidden; border:1px solid var(--line); }
+  .bf img { width:100%; display:block; image-rendering:pixelated; }
+  .bf .cells { position:absolute; left:0; right:0; bottom:0; top:11.111%; display:grid; grid-template-columns:repeat(12,1fr); grid-template-rows:repeat(8,1fr); }
+  .bf .cells div { cursor:default; } .bf .cells div.r { cursor:pointer; } .bf .cells div.r:hover { background:#78c8ff40; }
+  .bf .cells div.f { cursor:crosshair; } .bf .cells div.f:hover { outline:2px solid #ff6a5a; outline-offset:-2px; }
+  .hspr { width:32px; height:32px; image-rendering:pixelated; vertical-align:middle; margin-right:6px; background:#2a231d; border-radius:4px; }
   .lineup { display:flex; gap:6px; flex-wrap:wrap; justify-content:center; margin:6px 0 10px; }
   .lineup img { width:80px; height:80px; image-rendering:pixelated; background:#2a231d; border-radius:8px; }
   .lineup img.gone { filter:grayscale(1) brightness(.45); } .foe.sel { color:var(--gold); }
@@ -122,6 +128,25 @@ function mapSvg(d) {
   }
   return `<svg viewBox="0 0 ${5 * W + 14} ${4 * H + 14}" style="width:100%;max-height:360px">${lines}${boxes}</svg>`;
 }
+function battleView(d) {
+  const b = d.battle, reach = new Set(d.actions ? b.reach : []);
+  const at = {};
+  for (const u of b.units) for (let j = 0; j < u.fp; j++) for (let i = 0; i < u.fp; i++) at[`${u.bx + i},${u.by + j}`] = u;
+  let cells = '';
+  for (let y = 0; y < b.h; y++) for (let x = 0; x < b.w; x++) {
+    const k = `${x},${y}`, u = at[k];
+    const cls = u && u.side === 'm' ? 'f' : reach.has(k) && !u ? 'r' : '';
+    cells += `<div class="${cls}" title="${u ? esc(`${u.tag} ${u.name}`) : ''}" onclick="cell(${x},${y})"></div>`;
+  }
+  const v = `${d.log.length}-${d.turn?.id}-${b.steps}-${target}`;
+  return `<div class="bf"><img src="/api/runs/${d.id}/battle.png?target=${target || ''}&v=${encodeURIComponent(v)}" alt="Battle map"><div class="cells">${cells}</div></div>`;
+}
+function cell(x, y) {
+  if (!data?.battle) return;
+  const u = data.battle.units.find((u) => x >= u.bx && x < u.bx + u.fp && y >= u.by && y < u.by + u.fp);
+  if (u && u.side === 'm') { target = u.id; return render(data); }
+  if (data.actions && data.battle.reach.includes(`${x},${y}`) && !u) act('act', { heroId: data.actions.heroId, type: 'move', to: [x, y] });
+}
 function render(d) {
   const ex = d.rooms.find((r) => r.id === d.here);
   const room = ex;
@@ -138,22 +163,24 @@ function render(d) {
   } else if (fight && d.actions) {
     const a = d.actions, foes = d.foes.filter((f) => f.hp > 0);
     if (!foes.some((f) => f.id === target)) target = foes.sort((x, y) => x.hp - y.hp)[0]?.id;
-    ctrl = `<p style="margin:0 0 8px"><b>${esc(d.turn.name)}'s turn</b>: click a foe on the right to target it.</p>
+    ctrl = `<p style="margin:0 0 8px"><b>${esc(d.turn.name)}'s turn</b> (${d.battle?.steps ?? 0} squares of movement left): click a blue square to move, click a monster to target it, then pick an action. Actions move you closer by themselves if needed.</p>
       <div class="row">${a.weapons.map((w) => `<button class="go" onclick="act('act',{heroId:'${a.heroId}',type:'attack',weapon:${esc(JSON.stringify(w.name))},target})">⚔️ ${esc(w.name)} <small>${esc(w.text)}</small></button>`).join('')}</div>
       <div class="row" style="margin-top:6px">${a.spells.map((s) => `<button ${s.ok ? '' : 'disabled'} onclick="act('act',{heroId:'${a.heroId}',type:'cast',spell:${esc(JSON.stringify(s.name))},target})">✨ ${esc(s.name)} <small>${s.level || 'c'}${s.heal ? ' 💚' : s.aoe ? ' 💥' : ''}</small></button>`).join('')}</div>
       <div class="row" style="margin-top:6px"><button onclick="act('act',{heroId:'${a.heroId}',type:'dodge'})">🛡️ Dodge</button>
       <button ${a.potions ? '' : 'disabled'} onclick="act('act',{heroId:'${a.heroId}',type:'potion'})">🧪 Potion (${a.potions})</button>
+      <button onclick="act('act',{heroId:'${a.heroId}',type:'retreat'})">🏃 Back off &amp; dodge</button>
       <button onclick="act('auto')">🤖 Play it for me</button></div>`;
   } else if (fight) ctrl = `<p style="color:var(--dim);margin:0">Waiting for ${esc(d.turn?.name || '…')}${d.source === 'discord' ? ' in Discord' : ''}.</p>`;
   const ended = d.state === 'ended' ? `<div class="banner">🏁 ${esc(d.outcome)}${d.recap ? `<br><small>${{ writing: '📝 Sent to Note Tiger: the recap will show up in #recaps.', sending: 'Sending to Note Tiger…', failed: 'Couldn\'t send to Note Tiger: ' + esc(d.recap.error), off: 'Note Tiger isn\'t connected, so no recap.' }[d.recap.status] || ''}</small>` : ''}</div>` : '';
-  $('center').innerHTML = `${ended}<div class="card"><h2>Floor ${d.floor} of ${d.floors}: ${esc(d.floorName)} ${fight ? `· ⚔️ round ${d.round}` : ''}</h2>${mapSvg(d)}
-    <p style="margin:4px 0 10px;color:var(--dim)">📍 ${esc(room.name)}</p>${fight ? `<div class="lineup">${d.foes.map((f) => `<img class="${f.hp <= 0 ? 'gone' : ''}" title="${esc(f.name)}" src="/sprite/${encodeURIComponent(f.n)}.png">`).join('')}</div>` : ''}${d.state === 'ended' ? '' : ctrl}</div>
+  const bf = fight && d.battle ? battleView(d) : '';
+  $('center').innerHTML = `${ended}<div class="card"><h2>Floor ${d.floor} of ${d.floors}: ${esc(d.floorName)} ${fight ? `· ⚔️ round ${d.round}` : ''}</h2>${bf || mapSvg(d)}
+    <p style="margin:4px 0 10px;color:var(--dim)">📍 ${esc(room.name)}</p>${d.state === 'ended' ? '' : ctrl}</div>
     <div class="card"><h2>What happened</h2><div id="log">${d.log.map((l) => `<p>${md(l)}</p>`).join('')}</div></div>`;
   $('log').scrollTop = 1e6;
-  const heroes = d.heroes.map((h) => `<div class="hero ${d.turn?.id === h.id ? 'turn' : ''}"><span class="name ${h.dead ? 'dead' : ''}">${esc(h.name)}</span><span>${h.dead ? '💀' : h.down ? `🩸 ${h.ds.s}✓ ${h.ds.f}✗` : `${h.hp}/${h.maxHp}`} · AC ${h.ac}</span>
+  const heroes = d.heroes.map((h) => `<div class="hero ${d.turn?.id === h.id ? 'turn' : ''}"><span class="name ${h.dead ? 'dead' : ''}"><img class="hspr" src="/api/runs/${d.id}/hero/${encodeURIComponent(h.id)}.png">${h.tag && fight ? `<small style="color:var(--blue)">${h.tag}</small> ` : ''}${esc(h.name)}</span><span>${h.dead ? '💀' : h.down ? `🩸 ${h.ds.s}✓ ${h.ds.f}✗` : `${h.hp}/${h.maxHp}`} · AC ${h.ac}</span>
     <div class="hp"><i style="width:${Math.max(0, 100 * h.hp / h.maxHp)}%;background:${h.hp / h.maxHp < .3 ? 'var(--red)' : h.hp / h.maxHp < .6 ? 'var(--gold)' : 'var(--green)'}"></i></div>
     <span class="sub">${esc(h.cls)}${h.playerName ? ` · ${esc(h.playerName)}` : ' · 🤖'}${h.potions ? ` · 🧪${h.potions}` : ''}${Object.keys(h.slots).length ? ` · slots ${Object.entries(h.slots).filter(([, s]) => s.max).map(([l, s]) => `${l}:${s.max - (s.used || 0)}`).join(' ')}` : ''}${h.gold ? ` · ${h.gold} gp` : ''}${h.items.length ? ` · ${esc(h.items.join(', '))}` : ''}</span></div>`).join('');
-  const foes = fight ? `<div class="card"><h2>Foes</h2>${d.foes.map((f) => `<div class="foe ${f.hp <= 0 ? 'gone' : f.id === target ? 'sel' : ''}" onclick="${f.hp > 0 ? `target='${f.id}';tick()` : ''}"><span class="fn"><img class="spr" src="/sprite/${encodeURIComponent(f.n)}.png" alt="">${f.id === target ? '🎯 ' : ''}${esc(f.name)}</span><span>${f.hp}/${f.maxHp} · AC ${f.ac}</span></div>`).join('')}</div>` : '';
+  const foes = fight ? `<div class="card"><h2>Foes</h2>${d.foes.map((f) => `<div class="foe ${f.hp <= 0 ? 'gone' : f.id === target ? 'sel' : ''}" onclick="${f.hp > 0 ? `target='${f.id}';tick()` : ''}"><span class="fn"><img class="spr" src="/sprite/${encodeURIComponent(f.n)}.png" alt="">${f.id === target ? '🎯 ' : ''}<small style="color:var(--red)">${f.tag || ''}</small> ${esc(f.name)}</span><span>${f.hp}/${f.maxHp} · AC ${f.ac}</span></div>`).join('')}</div>` : '';
   $('right').innerHTML = `<div class="card"><h2>Party · ${d.gold} gold found</h2>${heroes}</div>${foes}
     <div class="card"><h2>GM</h2><div class="row">
       ${d.state === 'ended' ? '' : `<button onclick="act('autoplay',{on:${!d.autoplaying}})">${d.autoplaying ? '⏸ Stop auto-play' : '▶ Auto-play'}</button>
