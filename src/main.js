@@ -80,6 +80,15 @@ startWeb({
 });
 startUpdateChecks();
 
+// Paint every monster's 256×256 sprite in the background (once; they're kept on disk after that).
+{
+  const { MONSTERS } = await import('./dungeon.js');
+  const { spritePng } = await import('./sprites.js');
+  const todo = [...new Map([...MONSTERS['2024'], ...MONSTERS['2014']].map((m) => [m.n, m])).values()];
+  const step = () => { const m = todo.shift(); if (!m) return; try { spritePng(m); } catch (err) { console.error('[sprites]', m.n, err.message); } setTimeout(step, 20); };
+  setTimeout(step, 5000);
+}
+
 const info = await nt.check();
 console.log(info ? `[note tiger] connected (${nt.url})` : `[note tiger] not reachable: ${nt.lastError} (the game still works, with stand-in characters)`);
 startDiscord(s.DISCORD_TOKEN);

@@ -37,12 +37,12 @@
   @media (max-width: 860px) { .grid2 { grid-template-columns: 1fr; } }
   .hero { display:grid; grid-template-columns:36px 1fr auto; gap:2px 8px; align-items:center; padding:6px 0; border-bottom:1px solid var(--line); }
   .hero:last-child { border:0; }
-  .spr { width:36px; height:36px; image-rendering:pixelated; background:#2a231d; border-radius:3px; grid-row: span 2; }
+  .spr { width:36px; height:36px; background:#2a231d; border-radius:3px; grid-row: span 2; }
   .hp { height:6px; background:#2c2420; border-radius:2px; overflow:hidden; grid-column: 2 / 4; } .hp i { display:block; height:100%; }
   .me { color:var(--gold); } .turn { background:linear-gradient(90deg,#3b2f1766,transparent); }
   .tag { display:inline-block; font-size:12px; padding:0 6px; border-radius:2px; background:#2a231d; border:1px solid var(--line); }
   .bf { position:relative; width:100%; border:2px solid var(--ink); box-shadow:4px 4px 0 var(--ink); border-radius:2px; overflow:hidden; touch-action:manipulation; }
-  .bf img { width:100%; display:block; image-rendering:pixelated; }
+  .bf img { width:100%; display:block; }
   .cells { position:absolute; left:0; right:0; bottom:0; display:grid; }
   .cells div { position:relative; }
   .cells .r { background:#6aa8e833; box-shadow: inset 0 0 0 1px #6aa8e866; cursor:pointer; }
@@ -54,7 +54,7 @@
   .pip { display:inline-block; margin-right:2px; } .pip.act { color:#6fd47a; } .pip.bon { color:#f0a040; } .pip.used { color:#5a5048; }
   .turnbar { background:#2b2112; border:2px solid var(--gold); box-shadow:4px 4px 0 var(--ink); padding:10px 12px; border-radius:3px; margin:10px 0; }
   .log { max-height:260px; overflow:auto; font-size:14px; } .log p { margin:0 0 5px; } .log b { color:var(--gold); }
-  .foe { display:flex; align-items:center; gap:8px; padding:3px 0; cursor:pointer; } .foe img { width:36px; height:36px; image-rendering:pixelated; background:#2a231d; border-radius:3px; }
+  .foe { display:flex; align-items:center; gap:8px; padding:3px 0; cursor:pointer; } .foe img { width:40px; height:40px; background:#2a231d; border-radius:3px; }
   .foe.sel { color:var(--gold); } .foe .grow { flex:1; }
   .dirs { display:grid; grid-template-columns:repeat(3, 64px); gap:6px; justify-content:center; margin:8px 0; }
   .dirs button { padding:10px 0; }
@@ -62,7 +62,7 @@
   .list > div { padding:8px 10px; border:2px solid var(--line); border-radius:3px; margin-bottom:8px; cursor:pointer; background:#191512; }
   .list > div:hover { border-color:var(--gold); }
   .pcard { display:flex; gap:10px; align-items:center; padding:8px; border:2px solid var(--line); border-radius:3px; margin-bottom:8px; background:#191512; }
-  .pcard img { width:56px; height:56px; image-rendering:pixelated; background:#2a231d; border-radius:3px; }
+  .pcard img { width:72px; height:72px; background:#2a231d; border-radius:3px; }
   .banner { border:2px solid var(--gold); background:#26201a; padding:10px 12px; border-radius:3px; margin-bottom:12px; }
 </style>
 </head>

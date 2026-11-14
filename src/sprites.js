@@ -1,10 +1,17 @@
-// 32×32 pixel-art sprites for every monster, drawn by code: a body plan picked from the monster's kind and name
-// (people, beasts, birds, bugs, snakes, dragons, oozes, ghosts, golems…), colours from its name ("red", "frost", "bone"…),
-// small touches from a seed (weapons, horns, hoods), then pixel-art shading and a dark outline. The same monster always
-// gets the same sprite. Saved as PNG with a tiny built-in encoder (no extra packages).
+// 256×256 pixel-art sprites for every monster and hero, drawn by code: a body plan picked from the monster's kind and
+// name (people, beasts, birds, bugs, snakes, dragons, oozes, ghosts, golems…), colours from its name ("red", "frost",
+// "bone"…), small touches from a seed (weapons, horns, hoods). The shapes are laid out on a 32-unit sketch grid and
+// painted at 256×256: rounded shading lit from the top left with dithered pixel-art tones, fur, scales and stone
+// textures, eyes with pupils and a glint, glowing bits, and a thick dark outline. The same monster always gets the same
+// sprite. Saved as PNG with a tiny built-in encoder (no extra packages), and kept on disk so it's only painted once.
 import zlib from 'node:zlib';
+import fs from 'node:fs';
+import path from 'node:path';
+import crypto from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 
-const N = 32;
+export const SPRITE = 256;          // the finished sprite, in pixels
+const N = 32;                       // the sketch grid the body plans are drawn on
 
 // ---------- colour helpers ----------
 const hex = (h) => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
@@ -21,28 +28,38 @@ function rng(str) {
 // ---------- the drawing surface ----------
 // Materials: body, second (cloth/belly), metal, accent (horns, claws), eye, dark (mouth, holes), glow.
 const M = { body: 1, second: 2, metal: 3, accent: 4, eye: 5, dark: 6, glow: 7, wing: 8 };
+// Shapes are given in sketch units (0–32) and painted at `res` pixels (256 for sprites, 32 for the app icon).
 class Grid {
-  constructor(scale = 1) { this.p = new Uint8Array(N * N); this.s = scale; }
-  X(x) { return 16 + (x - 16) * this.s; }
-  Y(y) { return 30 - (30 - y) * this.s; }
-  raw(x, y, m) { x = Math.round(x); y = Math.round(y); if (x >= 1 && x < N - 1 && y >= 1 && y < N - 1) this.p[y * N + x] = M[m] ?? m; }
-  at(x, y) { return x < 0 || y < 0 || x >= N || y >= N ? 0 : this.p[y * N + x]; }
-  dot(x, y, m) { this.raw(this.X(x), this.Y(y), m); }
+  constructor(scale = 1, res = N) { this.R = res; this.k = res / N; this.p = new Uint8Array(res * res); this.s = scale; }
+  X(x) { return (16 + (x - 16) * this.s) * this.k; }
+  Y(y) { return (30 - (30 - y) * this.s) * this.k; }
+  raw(x, y, m) { x = Math.round(x); y = Math.round(y); const pad = Math.max(1, this.k); if (x >= pad && x < this.R - pad && y >= pad && y < this.R - pad) this.p[y * this.R + x] = M[m] ?? m; }
+  at(x, y) { return x < 0 || y < 0 || x >= this.R || y >= this.R ? 0 : this.p[y * this.R + x]; }
+  dot(x, y, m) { if (this.k === 1) this.raw(this.X(x), this.Y(y), m); else this.ell(x, y, 0.55 / this.s, 0.55 / this.s, m); }
   ell(cx, cy, rx, ry, m) {
-    const X = this.X(cx), Y = this.Y(cy), RX = Math.max(0.6, rx * this.s), RY = Math.max(0.6, ry * this.s);
+    const k = this.k, X = this.X(cx), Y = this.Y(cy), RX = Math.max(0.6, rx * this.s * k), RY = Math.max(0.6, ry * this.s * k);
+    const pad = k === 1 ? 0.3 : 0.5;
     for (let y = Math.floor(Y - RY); y <= Math.ceil(Y + RY); y++) for (let x = Math.floor(X - RX); x <= Math.ceil(X + RX); x++) {
-      if (((x - X) / (RX + 0.3)) ** 2 + ((y - Y) / (RY + 0.3)) ** 2 <= 1) this.raw(x, y, m);
+      if (((x - X) / (RX + pad)) ** 2 + ((y - Y) / (RY + pad)) ** 2 <= 1) this.raw(x, y, m);
     }
   }
   rect(x, y, w, h, m) {
-    const X = this.X(x), Y = this.Y(y), W = Math.max(1, Math.round(w * this.s)), H = Math.max(1, Math.round(h * this.s));
-    for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) this.raw(Math.round(X) + i, Math.round(Y) + j, m);
+    const k = this.k, X = this.X(x), Y = this.Y(y), W = Math.max(1, Math.round(w * this.s * k)), H = Math.max(1, Math.round(h * this.s * k));
+    // At sprite size, corners are rounded so limbs and bodies look soft instead of boxy.
+    const rr = k > 1 ? Math.min(W, H) * 0.42 : 0;
+    for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) {
+      if (rr) {
+        const cx = i < rr ? rr : i > W - 1 - rr ? W - 1 - rr : i, cy = j < rr ? rr : j > H - 1 - rr ? H - 1 - rr : j;
+        if (Math.hypot(i - cx, j - cy) > rr + 0.5) continue;
+      }
+      this.raw(Math.round(X) + i, Math.round(Y) + j, m);
+    }
   }
   line(x0, y0, x1, y1, m, t = 1) {
-    const n = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0)) * this.s * 2 + 1;
+    const n = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0)) * this.s * 2 * this.k + 1;
     for (let i = 0; i <= n; i++) {
       const x = x0 + (x1 - x0) * (i / n), y = y0 + (y1 - y0) * (i / n);
-      if (t <= 1) this.dot(x, y, m); else this.ell(x, y, t / 2, t / 2, m);
+      if (t <= 1 && this.k === 1) this.dot(x, y, m); else this.ell(x, y, Math.max(t, 0.25) / 2, Math.max(t, 0.25) / 2, m);
     }
   }
   tri(x0, y0, x1, y1, x2, y2, m) { // filled triangle
@@ -52,7 +69,8 @@ class Grid {
     const side = (a, b, x, y) => (b[0] - a[0]) * (y - a[1]) - (b[1] - a[1]) * (x - a[0]);
     for (let y = minY; y <= maxY; y++) for (let x = minX; x <= maxX; x++) {
       const s1 = side(P[0], P[1], x, y), s2 = side(P[1], P[2], x, y), s3 = side(P[2], P[0], x, y);
-      if ((s1 >= -0.5 && s2 >= -0.5 && s3 >= -0.5) || (s1 <= 0.5 && s2 <= 0.5 && s3 <= 0.5)) this.raw(x, y, m);
+      const e = this.k === 1 ? 0.5 : 0.5 * this.k;
+      if ((s1 >= -e && s2 >= -e && s3 >= -e) || (s1 <= e && s2 <= e && s3 <= e)) this.raw(x, y, m);
     }
   }
 }
@@ -155,6 +173,12 @@ function humanoid(g, r, n, o = {}) {
   if (armored && !o.horns) { g.ell(16, hy - 2, 5, 3, 'metal'); g.rect(11, hy - 1, 10, 1.5, 'metal'); }
   if (/medusa|yuan-ti/.test(n)) for (let i = 0; i < 5; i++) g.line(12 + i * 2, hy - 3, 10 + i * 3, hy - 8 + (i % 2), 'accent', 1.5);
   g.dot(14, hy + 0.5, 'eye'); g.dot(18, hy + 0.5, 'eye');
+  if (g.k > 1) { // face and fine details, only when painting big
+    g.line(13.1, hy - 0.8, 14.8, hy - 0.55, 'dark', 0.35); g.line(18.9, hy - 0.8, 17.2, hy - 0.55, 'dark', 0.35); // brows
+    g.line(15.2, hy + 2.5, 16.8, hy + 2.5, 'dark', 0.3);                                                  // mouth
+    g.rect(15.2, 20.2, 1.6, 1.5, 'metal');                                                                // belt buckle
+    if (!o.noLegs) { g.ell(12.5 - bulk, 29.4, 2.3, 0.8, 'dark'); g.ell(19.5 + bulk, 29.4, 2.3, 0.8, 'dark'); }
+  }
   if (/gnoll|bugbear|kobold|lizardfolk|kenku|werewolf|wererat|jackalwere/.test(n)) g.ell(16, hy + 3, 2.5, 2, 'body'); // snout
   // something in the hand
   const w = /barbarian/.test(n) ? 'axe' : /rogue|bard/.test(n) ? 'dagger' : /monk/.test(n) ? 'none' : archer ? 'bow' : caster ? 'staff' : armored ? (r() < 0.5 ? 'sword' : 'axe') : ['sword', 'club', 'spear', 'dagger', 'axe', 'none'][Math.floor(r() * 6)];
@@ -212,6 +236,11 @@ function quad(g, r, n, o = {}) {
   g.ell(hx + 3, hy + 1.5, 2.4, 1.8, 'body'); // snout
   g.dot(hx + 5, hy + 1, 'dark');
   g.dot(hx + 1, hy - 1, 'eye');
+  if (g.k > 1) {
+    g.line(hx + 2, hy + 2.6, hx + 5, hy + 2.2, 'dark', 0.5);                                        // mouth
+    for (const x of [11, 22]) for (let c = 0; c < 3; c++) g.tri(x + c * 1.1, 29.4, x + c * 1.1 + 0.8, 29.4, x + c * 1.1 + 0.6, 30.6, 'accent'); // claws
+    if (/owlbear/.test(n)) { g.tri(hx + 3, hy, hx + 3, hy + 2.4, hx + 6.5, hy + 1.6, 'accent'); g.ell(hx - 1, hy + 1, 4.5, 3.5, 'second'); g.ell(hx + 1, hy - 1, 1.2, 1.2, 'eye'); }
+  }
   g.tri(hx - 2, hy - 2, hx - 1, hy - 6, hx + 1, hy - 3, 'body'); // ear
   if (cat && /lion/.test(n)) g.ell(hx - 1, hy, 5, 5, 'second');
   if (/boar|mammoth|elephant/.test(n)) g.line(hx + 3, hy + 3, hx + 6, hy, 'accent', 1.4);
@@ -310,6 +339,11 @@ function dragon(g, r, n) {
   g.ell(26, 7, 3.6, 3, 'body');
   g.ell(29, 8, 2.6, 1.8, 'body');
   g.line(26.5, 9.2, 31, 9.2, 'dark');
+  if (g.k > 1) {
+    for (let x = 27.2; x < 30.8; x += 1.1) g.tri(x, 9.1, x + 0.6, 9.1, x + 0.3, 10, 'accent');            // teeth
+    for (const x of [10, 20]) for (let c = 0; c < 3; c++) g.tri(x + c * 1.1, 29.4, x + c * 1.1 + 0.8, 29.4, x + c * 1.1 + 0.6, 30.6, 'accent'); // claws
+    g.ell(30, 7.6, 0.35, 0.3, 'dark');                                                                       // nostril
+  }
   g.dot(26, 6, 'eye');
   g.line(24, 5, 21, 1, 'accent', 1.5); g.line(26, 4.5, 25, 0.5, 'accent', 1.3);
   if (!wyrmling && /red|gold|brass|fire/.test(n)) for (let i = 0; i < 3; i++) g.dot(31, 10 + i, 'glow');
@@ -419,35 +453,163 @@ function giant(g, r, n) {
 }
 const PLANS = { humanoid, zombie, skeleton, ghost, quad, low, bird, bug, snake, dragon, ooze, plant, elemental, construct, eye, swarm, fiend, angel, giant };
 
-// ---------- shading, outline, pixels ----------
-export function drawMonster(m, { words, seed } = {}) {
+// ---------- painting at 256×256 ----------
+// Five tones per colour, darkest to lightest, and a 4×4 Bayer pattern to dither between them (classic pixel-art look).
+const ramp5 = (h) => { const c = hex(h); return [mix(c, [16, 8, 26], 0.62), mix(c, [20, 12, 30], 0.34), c, mix(c, [255, 248, 230], 0.22), mix(c, [255, 252, 240], 0.46)]; };
+const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5].map((v) => (v + 0.5) / 16);
+const TEXTURE = { quad: 'fur', bird: 'feather', dragon: 'scale', snake: 'scale', low: 'scale', construct: 'stone', giant: 'skin', humanoid: 'skin', zombie: 'skin', fiend: 'skin', angel: 'skin', elemental: 'swirl', plant: 'bark', bug: 'shell', skeleton: 'bone', ooze: 'goo', ghost: 'goo', eye: 'skin', swarm: 'fur' };
+
+// Distance (in pixels) from each pixel to the nearest pixel that isn't part of the same blob (two-pass chamfer).
+function distanceIn(mask, R, edgeIsOutside = true) {
+  const E = edgeIsOutside ? 1 : 1e6;
+  const BIG = 1e6, d = new Float32Array(R * R);
+  for (let i = 0; i < R * R; i++) d[i] = mask[i] ? BIG : 0;
+  const s2 = Math.SQRT2;
+  for (let y = 0; y < R; y++) for (let x = 0; x < R; x++) {
+    const i = y * R + x; if (!d[i]) continue;
+    let v = d[i];
+    if (x > 0) v = Math.min(v, d[i - 1] + 1); else v = Math.min(v, E);
+    if (y > 0) { v = Math.min(v, d[i - R] + 1); if (x > 0) v = Math.min(v, d[i - R - 1] + s2); if (x < R - 1) v = Math.min(v, d[i - R + 1] + s2); } else v = Math.min(v, E);
+    d[i] = v;
+  }
+  for (let y = R - 1; y >= 0; y--) for (let x = R - 1; x >= 0; x--) {
+    const i = y * R + x; if (!d[i]) continue;
+    let v = d[i];
+    if (x < R - 1) v = Math.min(v, d[i + 1] + 1); else v = Math.min(v, E);
+    if (y < R - 1) { v = Math.min(v, d[i + R] + 1); if (x < R - 1) v = Math.min(v, d[i + R + 1] + s2); if (x > 0) v = Math.min(v, d[i + R - 1] + s2); } else v = Math.min(v, E);
+    d[i] = v;
+  }
+  return d;
+}
+
+export function drawMonster(m, { words, seed, res = SPRITE } = {}) {
   const r = rng(seed || m.n);
   const plan = words ? 'humanoid' : bodyPlan(m);
   const n = (words || m.n).toLowerCase();
-  const g = new Grid(plan === 'swarm' || plan === 'eye' ? 1 : SIZE[m.size] ?? 0.9);
+  const g = new Grid(plan === 'swarm' || plan === 'eye' ? 1 : SIZE[m.size] ?? 0.9, res);
   PLANS[plan](g, r, n, m.type);
   const pal = palette(words ? { ...m, n: `${words} ${m.n}` } : m, plan, r);
-  const names = Object.keys(M);
-  const ramps = Object.fromEntries(names.map((k) => [M[k], ramp(pal[k])]));
-  const flat = new Set([M.eye, M.dark, M.glow]);
-  const out = new Uint8Array(N * N * 4);
-  const outline = mix(hex(pal.body), [12, 6, 18], 0.82);
-  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
-    const v = g.at(x, y), i = (y * N + x) * 4;
-    let c = null;
-    if (v) {
-      const rp = ramps[v];
-      if (flat.has(v)) c = rp[1];
-      else {
-        // light from the top left: edges facing it are lighter, the far side and the underside darker
-        const lit = !g.at(x, y - 1) || !g.at(x - 1, y);
-        const shade = !g.at(x + 1, y) || !g.at(x, y + 1);
-        c = shade ? rp[0] : lit ? rp[2] : rp[1];
-      }
-    } else if (g.at(x - 1, y) || g.at(x + 1, y) || g.at(x, y - 1) || g.at(x, y + 1)) c = outline;
-    if (c) { out[i] = c[0]; out[i + 1] = c[1]; out[i + 2] = c[2]; out[i + 3] = 255; }
+  const R = g.R, P = g.p, K = g.k;
+  const ramps = Object.fromEntries(Object.keys(M).map((k) => [M[k], ramp5(pal[k])]));
+  const out = new Uint8Array(R * R * 4);
+  const tex = TEXTURE[plan] || 'skin';
+  const tr = rng(`tex|${seed || m.n}`);
+  const jitter = new Float32Array(64).map(() => tr());
+
+  // Each part (same colour, touching) gets its own rounded "pillow": the height grows from its edge inward.
+  const height = new Float32Array(R * R);
+  for (const v of new Set(P)) {
+    if (!v || v === M.eye || v === M.dark) continue;
+    const mask = new Uint8Array(R * R);
+    // Eyes, mouths and other small marks don't count as edges (they sit on the surface).
+    for (let i = 0; i < R * R; i++) if (P[i] === v || P[i] === M.eye || P[i] === M.dark) mask[i] = 1;
+    const d = distanceIn(mask, R);
+    const cap = 2.6 * K;
+    for (let i = 0; i < R * R; i++) if (mask[i]) { const t = Math.min(d[i], cap) / cap; height[i] = Math.sqrt(1 - (1 - t) ** 2); }
   }
-  return { rgba: out, plan };
+  const L = [-0.55, -0.72, 0.65]; // light from the top left, a little in front
+  const outline = mix(hex(pal.body), [10, 5, 16], 0.86);
+  const reachSeam = Math.max(1, Math.round(K / 4));
+  const seam = (x, y, v) => { // a pixel next to a different part: draw the line between them
+    for (let s2 = 1; s2 <= reachSeam; s2++) for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const o = g.at(x + dx * s2, y + dy * s2); if (o && o !== v && o !== M.eye && o !== M.dark && v !== M.dark && v < o) return true; }
+    return false;
+  };
+  const surface = (x, y, v, t) => { // fur, scales, stone… a nudge up or down in tone
+    const k = K;
+    if (v === M.metal) return ((x + y * 2) % Math.round(10 * k / 2) < k / 2 ? 1 : 0);
+    if (v === M.second) return (Math.sin(x / (1.6 * k) + Math.sin(y / (4 * k)) * 1.5) > 0.96 ? -0.6 : 0); // cloth folds
+    if (v !== M.body && v !== M.wing) return 0;
+    if (t === 'fur') { const s = (x * 3 + y * 5 + Math.floor(jitter[((x >> 2) + (y >> 3) * 7) & 63] * 40)) % Math.round(14 * k / 4); return s < 2 ? -1 : 0; }
+    if (t === 'feather') { const cy = y % (3 * k), cx = (x + (Math.floor(y / (3 * k)) % 2) * 1.5 * k) % (3 * k); return cy > 2.4 * k || Math.abs(cx - 1.5 * k) > 1.35 * k ? -1 : 0; }
+    if (t === 'scale') { const row = Math.floor(y / (1.6 * k)), cx = (x + (row % 2) * 1.2 * k) % (2.4 * k) - 1.2 * k, cy = y % (1.6 * k); return Math.hypot(cx, cy * 1.4) > 1.15 * k && cy < 0.9 * k ? -1 : 0; }
+    if (t === 'stone') { const c = jitter[((x / (3 * k)) | 0) * 7 + ((y / (2 * k)) | 0) * 13 & 63]; return (x % (3 * k) < 1 || y % (2 * k) < 1) && c > 0.3 ? -1 : 0; }
+    if (t === 'bark') return Math.sin(x / (0.7 * k) + Math.sin(y / (3 * k)) * 2) > 0.85 ? -1 : 0;
+    if (t === 'shell') return Math.abs(Math.sin(y / (1.2 * k))) < 0.12 ? -1 : 0;
+    if (t === 'goo') return jitter[((x >> 3) * 5 + (y >> 3) * 3) & 63] > 0.93 ? 1 : 0;
+    if (t === 'bone') return 0;
+    return jitter[((x >> 2) * 11 + (y >> 2) * 17) & 63] > 0.94 ? -1 : 0; // skin: a few freckles of shade
+  };
+  for (let y = 0; y < R; y++) for (let x = 0; x < R; x++) {
+    const i = y * R + x, v = P[i];
+    if (!v) continue;
+    const rp = ramps[v];
+    let c;
+    if (v === M.eye) c = rp[3];
+    else if (v === M.dark) c = rp[1];
+    else if (v === M.glow) c = (height[i] > 0.55 ? rp[4] : height[i] > 0.25 ? rp[3] : rp[2]);
+    else {
+      // normal from the height slope → how much it faces the light
+      const hx = (height[i + 1] || 0) - (height[i - 1] || 0), hy = (height[i + R] || 0) - (height[i - R] || 0);
+      const nx = -hx * K * 1.6, ny = -hy * K * 1.6, nz = 1;
+      const len = Math.hypot(nx, ny, nz);
+      const lum = (nx * L[0] + ny * L[1] + nz * L[2]) / len;             // how much it faces the light
+      // the lower part of the sprite sits a little more in shadow; textures nudge the tone
+      let t = 2 + (lum - 0.62) * 4.2 + (0.5 - y / R) * 0.5 + surface(x, y, v, tex) * 0.75;
+      t = Math.max(0, Math.min(4, t));
+      const base = Math.floor(t), frac = t - base;
+      let tone = frac > BAYER[(y & 3) * 4 + (x & 3)] ? base + 1 : base;
+      if (seam(x, y, v)) tone = Math.min(tone, 1);
+      c = rp[Math.max(0, Math.min(4, tone))];
+    }
+    out.set([c[0], c[1], c[2], 255], i * 4);
+  }
+
+  // Eyes: a dark pupil (looking the way the creature faces) and a white glint.
+  const seen = new Uint8Array(R * R);
+  for (let i = 0; i < R * R; i++) {
+    if (P[i] !== M.eye || seen[i]) continue;
+    const q = [i]; seen[i] = 1; let sx = 0, sy = 0, cnt = 0;
+    while (q.length) { const j = q.pop(); const x = j % R, y = (j / R) | 0; sx += x; sy += y; cnt++; for (const o of [j + 1, j - 1, j + R, j - R]) if (o >= 0 && o < R * R && !seen[o] && P[o] === M.eye) { seen[o] = 1; q.push(o); } }
+    if (cnt < 6) continue;
+    const cx = sx / cnt, cy = sy / cnt, rad = Math.sqrt(cnt / Math.PI);
+    const look = plan === 'humanoid' || plan === 'giant' || plan === 'zombie' || plan === 'skeleton' || plan === 'fiend' || plan === 'angel' ? 0 : 0.25;
+    const glowy = hex(pal.eye)[0] > 200 && hex(pal.eye)[1] < 120; // red, glowing eyes have no pupil
+    for (let y = Math.floor(cy - rad); y <= cy + rad; y++) for (let x = Math.floor(cx - rad); x <= cx + rad; x++) {
+      const j = y * R + x; if (P[j] !== M.eye) continue;
+      const d = Math.hypot(x - (cx + rad * look), y - cy);
+      if (!glowy && d < rad * 0.55) out.set([20, 12, 18, 255], j * 4);
+      if (Math.hypot(x - (cx - rad * 0.3), y - (cy - rad * 0.32)) < rad * 0.24) out.set([255, 255, 255, 255], j * 4);
+    }
+  }
+
+  // A soft glow around glowing parts (flames, magic, burning eyes).
+  const glowMask = new Uint8Array(R * R);
+  let anyGlow = false;
+  for (let i = 0; i < R * R; i++) if (P[i] === M.glow || (P[i] === M.eye && hex(pal.eye)[1] < 120)) { glowMask[i] = 1; anyGlow = true; }
+  const gd = anyGlow ? distanceIn(glowMask.map((v) => (v ? 0 : 1)), R, false) : null;
+
+  // Thick dark outline around the whole creature, then the glow outside it.
+  const solid = new Uint8Array(R * R);
+  for (let i = 0; i < R * R; i++) solid[i] = P[i] ? 0 : 1;
+  const od = distanceIn(solid, R, false);   // distance from empty pixels to the creature
+  const thick = Math.max(1, Math.round(K * 0.42));
+  const gc = hex(pal.glow);
+  for (let i = 0; i < R * R; i++) {
+    if (P[i]) continue;
+    if (od[i] <= thick + 0.01) { out.set([outline[0], outline[1], outline[2], 255], i * 4); continue; }
+    if (gd && gd[i] < 3 * K) {
+      const a = Math.round(150 * (1 - gd[i] / (3 * K)) ** 2);
+      if (a > 6 && BAYER[(((i / R) | 0) & 3) * 4 + ((i % R) & 3)] < a / 150 + 0.15) out.set([gc[0], gc[1], gc[2], a], i * 4);
+    }
+  }
+  // Ghosts and oozes are a little see-through.
+  if (plan === 'ghost') for (let i = 0; i < R * R; i++) if (P[i]) out[i * 4 + 3] = 215;
+  return { rgba: out, plan, res: R };
+}
+
+// Smaller copies (for the battle map): each output pixel is the average of the pixels it covers.
+export function shrink(rgba, from, to) {
+  const out = new Uint8Array(to * to * 4), f = from / to;
+  for (let y = 0; y < to; y++) for (let x = 0; x < to; x++) {
+    let r = 0, g = 0, b = 0, a = 0, n = 0;
+    for (let j = Math.floor(y * f); j < Math.floor((y + 1) * f); j++) for (let i = Math.floor(x * f); i < Math.floor((x + 1) * f); i++) {
+      const s = (j * from + i) * 4, al = rgba[s + 3];
+      r += rgba[s] * al; g += rgba[s + 1] * al; b += rgba[s + 2] * al; a += al; n++;
+    }
+    const d = (y * to + x) * 4;
+    if (a) { out[d] = r / a; out[d + 1] = g / a; out[d + 2] = b / a; out[d + 3] = a / n; }
+  }
+  return out;
 }
 
 // ---------- PNG ----------
@@ -485,40 +647,41 @@ export function heroWords(h) {
   const kin = /elf/.test(sp) ? 'elf' : /orc/.test(sp) ? 'orc' : /gnome/.test(sp) ? 'gnome' : /tiefling/.test(sp) ? 'tiefling' : /dragonborn/.test(sp) ? 'kobold' : /goliath/.test(sp) ? 'stone' : '';
   return `${CLASS_WORDS[cls] || 'warrior'} ${kin}`;
 }
-export function drawHero(h) {
-  return drawMonster({ n: h.name, type: 'humanoid', size: /halfling|gnome/i.test(h.species || '') ? 'Small' : 'Medium' }, { words: heroWords(h), seed: h.name });
-}
-export function heroPng(h, scale = 1) {
-  const key = `hero|${h.name}|${h.cls}|${h.species}|${scale}`;
-  if (!cache.has(key)) { const { rgba } = drawHero(h); cache.set(key, png(scale > 1 ? scaleUp(rgba, N, N, scale) : rgba, N * scale, N * scale)); }
-  return cache.get(key);
+export function drawHero(h, opts = {}) {
+  return drawMonster({ n: h.name, type: 'humanoid', size: /halfling|gnome/i.test(h.species || '') ? 'Small' : 'Medium' }, { words: heroWords(h), seed: h.name, ...opts });
 }
 
+// Painting a 256×256 sprite takes a moment, so finished ones are kept in memory and on disk (cache\sprites).
+const VERSION = 'v2';
+const CACHE_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'cache', `sprites-${VERSION}`);
 const cache = new Map();
-export function spritePng(m, scale = 1) {
-  const key = `${m.n}|${m.size}|${m.type}|${scale}`;
-  if (!cache.has(key)) {
-    const { rgba } = drawMonster(m);
-    cache.set(key, png(scale > 1 ? scaleUp(rgba, N, N, scale) : rgba, N * scale, N * scale));
+function cached(key, paint) {
+  if (cache.has(key)) return cache.get(key);
+  const file = path.join(CACHE_DIR, `${crypto.createHash('sha1').update(key).digest('hex').slice(0, 20)}.png`);
+  let buf = null;
+  try { buf = fs.readFileSync(file); } catch { /* not yet */ }
+  if (!buf) {
+    buf = paint();
+    try { fs.mkdirSync(CACHE_DIR, { recursive: true }); fs.writeFileSync(file, buf); } catch { /* fine, memory only */ }
   }
-  return cache.get(key);
+  if (cache.size > 800) cache.delete(cache.keys().next().value);
+  cache.set(key, buf);
+  return buf;
 }
-// A row of monsters (a fight's line-up), on a dark stone background, for Discord.
-export function lineupPng(monsters, { scale = 3, dead = new Set() } = {}) {
-  const list = monsters.slice(0, 8);
-  const pad = 4, W = (N + pad) * list.length + pad, H = N + pad * 2;
-  const img = new Uint8Array(W * H * 4);
-  for (let i = 0; i < W * H; i++) { const s = ((i % W) + Math.floor(i / W)) % 7 ? 0 : 6; img.set([30 + s, 25 + s, 22 + s, 255], i * 4); }
-  list.forEach((m, k) => {
-    const { rgba } = drawMonster(m);
-    const ox = pad + k * (N + pad);
-    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
-      const s = (y * N + x) * 4;
-      if (!rgba[s + 3]) continue;
-      const d = ((y + pad) * W + ox + x) * 4;
-      const gray = dead.has(m.id) ? Math.round((rgba[s] + rgba[s + 1] + rgba[s + 2]) / 3 * 0.45) : -1;
-      img.set(gray >= 0 ? [gray, gray, gray, 255] : [rgba[s], rgba[s + 1], rgba[s + 2], 255], d);
-    }
-  });
-  return png(scaleUp(img, W, H, scale), W * scale, H * scale);
+export function heroPng(h) {
+  return cached(`hero|${h.name}|${heroWords(h)}|${h.species || ''}`, () => png(drawHero(h).rgba, SPRITE, SPRITE));
+}
+export function spritePng(m) {
+  return cached(`mon|${m.n}|${m.size}|${m.type}`, () => png(drawMonster(m).rgba, SPRITE, SPRITE));
+}
+// Pixels of a sprite at any size (the battle map uses 64 per square), kept in memory.
+const pixelCache = new Map();
+export function spritePixels(u, size) {
+  const key = `${u.side === 'h' ? `h|${u.name}|${heroWords(u)}` : `m|${u.n}`}|${size}`;
+  if (!pixelCache.has(key)) {
+    const full = u.side === 'h' ? drawHero(u).rgba : drawMonster(u).rgba;
+    if (pixelCache.size > 300) pixelCache.delete(pixelCache.keys().next().value);
+    pixelCache.set(key, size === SPRITE ? full : shrink(full, SPRITE, size));
+  }
+  return pixelCache.get(key);
 }

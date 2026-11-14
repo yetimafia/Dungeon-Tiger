@@ -49,15 +49,15 @@ export function startWeb({ delve, port = 3090, lan = false, app = {} }) {
         const m = findMonster(name);
         if (!m) return send(res, 404, { error: 'No such monster' });
         res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'max-age=86400' });
-        return res.end(spritePng(m, Math.max(1, Math.min(8, Number(url.searchParams.get('scale')) || 1))));
+        return res.end(spritePng(m));
       }
       if (p[0] === 'sprites') {
         const all = [...new Map([...MONSTERS['2024'], ...MONSTERS['2014']].map((m) => [m.n, m])).values()].sort((a, b) => a.n.localeCompare(b.n));
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
         return res.end(`<!DOCTYPE html><title>Monsters · Dungeon Tiger</title><style>body{background:#14110f;color:#eae2d6;font:13px system-ui;margin:16px}
-          div{display:inline-block;width:118px;text-align:center;margin:4px;vertical-align:top}img{width:96px;height:96px;image-rendering:pixelated;background:#221d19;border-radius:8px}
+          div{display:inline-block;width:140px;text-align:center;margin:4px;vertical-align:top}img{width:128px;height:128px;background:#221d19;border-radius:8px}
           small{color:#9c8f80;display:block}</style><h2>All ${all.length} monsters</h2>`
-          + all.map((m) => `<div><img src="/sprite/${encodeURIComponent(m.n)}.png" loading="lazy"><br>${m.n}<small>CR ${m.cr} · ${bodyPlan(m)}</small></div>`).join(''));
+          + '<p style="color:#9c8f80">Each one is a 256×256 pixel-art sprite. Click one to see it full size. The first time, painting them all takes a minute.</p>' + all.map((m) => `<div><a href="/sprite/${encodeURIComponent(m.n)}.png" target="_blank"><img src="/sprite/${encodeURIComponent(m.n)}.png" loading="lazy"></a><br>${m.n}<small>CR ${m.cr} · ${bodyPlan(m)}</small></div>`).join(''));
       }
       if (p[0] !== 'api') return send(res, 404, { error: 'Not found' });
       // For the Windows launcher and installer.
@@ -122,7 +122,7 @@ export function startWeb({ delve, port = 3090, lan = false, app = {} }) {
         if (!run.combat) return send(res, 404, { error: 'No fight' });
         const w = run.waiting && run.hero(run.waiting.heroId);
         res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'no-store' });
-        return res.end(battlePng(run.combat.field, run.heroes, run.combat.monsters, { scale: 2, reach: w ? run.reach(w) : null, current: run.current()?.id, target: url.searchParams.get('target') }));
+        return res.end(battlePng(run.combat.field, run.heroes, run.combat.monsters, { reach: w ? run.reach(w) : null, current: run.current()?.id, target: url.searchParams.get('target') }));
       }
       if (req.method === 'GET' && p[3] === 'hero' && p[4]) {
         const h = run.hero(decodeURIComponent(p[4]).replace(/\.png$/, ''));

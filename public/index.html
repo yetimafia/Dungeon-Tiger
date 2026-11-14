@@ -37,16 +37,16 @@
   .dead { opacity:.45; text-decoration:line-through; }
   .foe { display:flex; justify-content:space-between; align-items:center; padding:3px 0; cursor:pointer; }
   .fn { display:flex; align-items:center; gap:8px; }
-  .spr { width:48px; height:48px; image-rendering:pixelated; background:#2a231d; border-radius:6px; }
+  .spr { width:48px; height:48px; background:#2a231d; border-radius:6px; }
   .foe.gone .spr { filter:grayscale(1) brightness(.5); }
   .bf { position:relative; width:100%; max-width:calc(var(--bw) * 64px); margin:0 auto; border-radius:8px; overflow:hidden; border:1px solid var(--line); }
-  .bf img { width:100%; display:block; image-rendering:pixelated; }
+  .bf img { width:100%; display:block; }
   .bf .cells { position:absolute; left:0; right:0; bottom:0; display:grid; }
   .bf .cells div { cursor:default; } .bf .cells div.r { cursor:pointer; } .bf .cells div.r:hover { background:#78c8ff40; }
   .bf .cells div.f { cursor:crosshair; } .bf .cells div.f:hover { outline:2px solid #ff6a5a; outline-offset:-2px; }
-  .hspr { width:32px; height:32px; image-rendering:pixelated; vertical-align:middle; margin-right:6px; background:#2a231d; border-radius:4px; }
+  .hspr { width:32px; height:32px; vertical-align:middle; margin-right:6px; background:#2a231d; border-radius:4px; }
   .lineup { display:flex; gap:6px; flex-wrap:wrap; justify-content:center; margin:6px 0 10px; }
-  .lineup img { width:80px; height:80px; image-rendering:pixelated; background:#2a231d; border-radius:8px; }
+  .lineup img { width:80px; height:80px; background:#2a231d; border-radius:8px; }
   .lineup img.gone { filter:grayscale(1) brightness(.45); } .foe.sel { color:var(--gold); }
   .foe.gone { opacity:.35; text-decoration:line-through; cursor:default; }
   .empty { color:var(--dim); text-align:center; padding:40px 10px; }

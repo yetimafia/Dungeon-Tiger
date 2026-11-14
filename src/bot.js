@@ -76,7 +76,7 @@ export function startBot({ token, delve, turnSeconds: ts = 120 }) {
     run.on('fight', () => queue(async () => {
       await flush();
       if (!run.combat) return;
-      await channel.send({ content: `-# Battle map: heroes are blue numbers, monsters red letters. One square is 5 feet.`, files: [{ attachment: battlePng(run.combat.field, run.heroes, run.combat.monsters, { scale: 2 }), name: 'battle.png' }] });
+      await channel.send({ content: `-# Battle map: heroes are blue numbers, monsters red letters. One square is 5 feet.`, files: [{ attachment: battlePng(run.combat.field, run.heroes, run.combat.monsters, {}), name: 'battle.png' }] });
     }));
     run.on('turn', (h) => queue(async () => { await flush(); await postTurn(run, h); }));
     run.on('end', () => queue(async () => {
@@ -136,7 +136,7 @@ export function startBot({ token, delve, turnSeconds: ts = 120 }) {
       ...run.options(h).filter((o) => o.ok).map((o) => ({ label: `${C[o.cost]} ${o.label.replace(/^\S+\s/, '')}`, description: { actionSurge: 'One more action this turn', rage: 'Bonus damage, half damage from weapons', secondWind: 'Heal yourself', offhand: 'Swing your other light weapon', martial: 'An unarmed follow-up strike', shove: 'Push the target 10 ft away', help: 'Get a fallen friend back up' }[o.type] || '', value: `o:${o.type}` })),
     ].slice(0, 25).map((o) => ({ ...o, label: clip(o.label, 100), description: clip(o.description || ' ', 100), value: o.value.slice(0, 100) }));
     if (!acts.length) acts.push({ label: 'Nothing left but moving', description: 'Press End turn', value: 'none' });
-    const png = battlePng(run.combat.field, run.heroes, run.combat.monsters, { scale: 2, reach: run.reach(h), current: h.id, target });
+    const png = battlePng(run.combat.field, run.heroes, run.combat.monsters, { reach: run.reach(h), current: h.id, target });
     return {
       content: `${h.player ? `<@${h.player}> ` : ''}**${h.name}'s turn** (\`${h.tag}\` on the map, ${bar(h)}, AC ${h.ac}). Round ${run.combat.round}.\n${'🟢'.repeat(h.res?.action || 0) || '–'} action · ${'🔶'.repeat(h.res?.bonus || 0) || '–'} bonus · 👣 ${h.steps * 5} ft${h.raging ? ' · 😤 raging' : ''}\nFoes: ${foeText}\n-# Pick a target, then actions: you walk up by yourself. Press End turn when you're done. ${turnSecs()}s, then the game finishes the turn for you.`,
       files: [{ attachment: png, name: 'battle.png' }],
@@ -201,7 +201,7 @@ export function startBot({ token, delve, turnSeconds: ts = 120 }) {
     const run = delve.get(byThread.get(i.channelId));
     if (!run) return i.reply({ content: 'There\'s no run in this thread. Start one with `/dungeon start`.', ...EPH });
     if (sub === 'map') {
-      const extra = run.state === 'combat' ? { files: [{ attachment: battlePng(run.combat.field, run.heroes, run.combat.monsters, { scale: 2, current: run.current()?.id }), name: 'battle.png' }] } : {};
+      const extra = run.state === 'combat' ? { files: [{ attachment: battlePng(run.combat.field, run.heroes, run.combat.monsters, { current: run.current()?.id }), name: 'battle.png' }] } : {};
       return i.reply({ ...panelView(run), components: [], ...extra });
     }
     if (sub === 'end') {

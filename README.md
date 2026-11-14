@@ -109,12 +109,15 @@ lava in the forge, and black crystal and runes at the bottom. Pillars, crates, t
 
 ## Monster sprites
 
-Every monster (all 364 from the free D&D rules) has its own 32×32 pixel-art sprite. They're drawn by code from the
-monster's body type and name: dragons get wings and their colour, "frost" and "fire" monsters get icy or fiery colours,
-and so on. The same monster always looks the same.
+Every monster (all 364 from the free D&D rules) and every hero has its own 256×256 pixel-art sprite. They're drawn by
+code from the monster's body type and name: dragons get wings, teeth and their colour, "frost" and "fire" monsters get
+icy or fiery colours, and so on. They're painted with rounded shading lit from the top left, dithered pixel-art tones,
+fur, scale, feather and stone textures, eyes with pupils, glowing magic and a thick outline. The same monster always
+looks the same. Finished sprites are kept in `app\\cache`, so each one is only painted once.
 
 - They stand on the battle map, and the party gets sprites too, dressed for their class (robes and staffs, armour, bows…).
-- **http://localhost:3090/sprites** shows all of them. A single sprite is at `/sprite/<Monster Name>.png`; add `?scale=4` for a bigger one.
+- **http://localhost:3090/sprites** shows all of them; click one for full size. A single sprite is at `/sprite/<Monster Name>.png`.
+- The battle map uses 64 pixels per 5-foot square, with the sprites shrunk to fit.
 
 ## How the dungeon works
 

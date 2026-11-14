@@ -191,7 +191,7 @@ export function startPlayers({ delve, port = 3091, password = () => '', token = 
         if (req.method === 'GET' && p[3] === 'battle.png') {
           if (!run.combat) return send(res, 404, { error: 'No fight' });
           res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'no-store' });
-          return res.end(battlePng(run.combat.field, run.heroes, run.combat.monsters, { scale: 2, current: run.current()?.id }));
+          return res.end(battlePng(run.combat.field, run.heroes, run.combat.monsters, { current: run.current()?.id }));
         }
         if (req.method === 'GET' && p[3] === 'hero' && p[4]) {
           const h = run.hero(decodeURIComponent(p[4]).replace(/\.png$/, ''));

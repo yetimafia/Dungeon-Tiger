@@ -1,9 +1,7 @@
-**Dungeon Tiger 1.2.0: Baldur's Gate 3 style turns**
-- 🟢🔶 **Action, Bonus Action and movement:** every turn gives one Action, one Bonus Action, and your movement. Use them in any order, then press **End turn**. Every button shows what it costs.
-- ⚔️ **Extra Attack:** with Extra Attack, each tap is one swing, so you can move or switch targets between swings.
-- 🔶 **Bonus actions:** potions, Healing Word and other bonus-action spells, Shove, off-hand attacks with two light weapons, Martial Arts, Rage, Second Wind, and Cunning Action (rogues Dash or Disengage as a bonus action).
-- ⚡ **Action Surge** adds a whole extra Action to the turn. New action: **Help** gets a fallen friend back up.
-- Works on the players' website, the GM page and in Discord. Discord now has an **End turn** button, and the action list shows 🟢 or 🔶 for each choice.
-- Companions the game plays use their bonus actions too. Fights are a little tougher to make up for it.
+**Dungeon Tiger 1.3.0: 256×256 sprites**
+- 🎨 Every monster (all 364) and every hero has been redrawn as a **256×256 pixel-art sprite**: rounded shading lit from the top left, dithered pixel-art tones, fur, scale, feather and stone textures, eyes with pupils and a glint, faces on people, claws and teeth on beasts and dragons, glowing magic, and a thick outline.
+- 🗺️ The battle map is sharper: 64 pixels per square, with the floors, walls and props redrawn to match.
+- See them all at the **Monsters** link on the Dungeon Tiger window (click one for full size).
+- Sprites are painted in the background the first time Dungeon Tiger runs (about 10 seconds), then kept, so they load instantly after that.
 
 Your settings are kept when you update.

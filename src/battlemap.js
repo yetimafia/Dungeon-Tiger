@@ -2,9 +2,10 @@
 // flagstones, flooded crypt slabs, fungus and moss, forge plates with lava, black glass with runes). Heroes start by the
 // door on the left, monsters on the right. Pillars, barrels, tombs and the like block movement. Large monsters take
 // 2×2 squares, Huge and bigger 3×3.
-import { Grid, ramp, hex, mix, rng, drawMonster, drawHero, png, scaleUp } from './sprites.js';
+import { Grid, ramp, hex, mix, rng, spritePixels, png, scaleUp } from './sprites.js';
 
-export const TILE = 32, WALL = 1; // one row of wall drawn above the floor
+export const TILE = 64, WALL = 1; // pixels per 5-ft square; one row of wall is drawn above the floor
+const F = TILE / 32;               // the floor, walls and objects were designed at 32 px a square
 export const FP = { Tiny: 1, Small: 1, Medium: 1, Large: 2, Huge: 3, Gargantuan: 3 };
 
 // ---------- the five looks ----------
@@ -198,14 +199,14 @@ class Canvas {
     this.p[i + 3] = 255;
   }
   rect(x, y, w, h, c, a = 1) { for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) this.px(x + i, y + j, c, a); }
-  // Draws a 32×32 sprite, scaled by k, optionally mirrored, greyed out or see-through.
-  sprite(rgba, x, y, { k = 1, flip = false, gray = false, alpha = 1 } = {}) {
-    for (let j = 0; j < 32 * k; j++) for (let i = 0; i < 32 * k; i++) {
-      const sx = flip ? 31 - Math.floor(i / k) : Math.floor(i / k), s = (Math.floor(j / k) * 32 + sx) * 4;
+  // Draws a square sprite `size` pixels wide, optionally mirrored, greyed out or see-through (keeps its soft edges).
+  sprite(rgba, x, y, { size = TILE, flip = false, gray = false, alpha = 1 } = {}) {
+    for (let j = 0; j < size; j++) for (let i = 0; i < size; i++) {
+      const sx = flip ? size - 1 - i : i, s = (j * size + sx) * 4;
       if (!rgba[s + 3]) continue;
       let c = [rgba[s], rgba[s + 1], rgba[s + 2]];
       if (gray) { const g = Math.round((c[0] + c[1] + c[2]) / 3 * 0.55); c = [g, g, g]; }
-      this.px(x + i, y + j, c, alpha);
+      this.px(x + i, y + j, c, alpha * rgba[s + 3] / 255);
     }
   }
 }
@@ -221,12 +222,12 @@ const FONT = {
   Y: '101101010010010', Z: '111001010100111',
 };
 function label(cv, text, x, y, bg, fg = [255, 255, 255]) {
-  const w = text.length * 4 + 1;
-  cv.rect(x, y, w + 2, 9, [16, 10, 14]);
-  cv.rect(x + 1, y + 1, w, 7, bg);
+  const w = (text.length * 4 + 1) * F;
+  cv.rect(x, y, w + 2 * F, 9 * F, [16, 10, 14]);
+  cv.rect(x + F, y + F, w, 7 * F, bg);
   [...text].forEach((ch, n) => {
     const f = FONT[ch];
-    if (f) for (let i = 0; i < 15; i++) if (f[i] === '1') cv.px(x + 2 + n * 4 + (i % 3), y + 2 + Math.floor(i / 3), fg);
+    if (f) for (let i = 0; i < 15; i++) if (f[i] === '1') cv.rect(x + (2 + n * 4 + (i % 3)) * F, y + (2 + Math.floor(i / 3)) * F, F, F, fg);
   });
 }
 
@@ -238,9 +239,10 @@ function floorTile(theme, x, y) {
   const split = theme.name === 'fungal' ? -1 : Math.floor(r() * 3); // 0: one slab, 1: two, 2: four
   for (let j = 0; j < TILE; j++) for (let i = 0; i < TILE; i++) {
     let c = mix(base, [0, 0, 0], (r() - 0.5) * 0.12);
-    const edge = i === 0 || j === 0 || (split >= 1 && i === 16) || (split === 2 && j === 16);
+    const h = TILE / 2, on = (v, at) => v >= at && v < at + F;
+    const edge = on(i, 0) || on(j, 0) || (split >= 1 && on(i, h)) || (split === 2 && on(j, h));
     if (edge && split >= 0) c = grout;
-    else if (split >= 0 && (i === 1 || j === 1 || (split >= 1 && i === 17) || (split === 2 && j === 17))) c = mix(c, [255, 255, 255], 0.08);
+    else if (split >= 0 && (on(i, F) || on(j, F) || (split >= 1 && on(i, h + F)) || (split === 2 && on(j, h + F)))) c = mix(c, [255, 255, 255], 0.08);
     if (theme.name === 'fungal' && r() < 0.06) c = mix(c, [90, 140, 60], 0.4);
     out.push(c);
   }
@@ -253,8 +255,14 @@ const THING_COLOURS = {
   straw: ['#b8a050', '#8a7838'], puddle: ['#3a5a6a', '#6a9aaa'], crack: ['#2a2420', '#2a2420'], bones: ['#ddd3b8', '#a89e86'], moss: ['#4f7a34', '#6a9a44'],
   shroom: ['#c7a0ff', '#7a5ab0'], glowcrack: ['#ff8a3a', '#ffd04a'], chain: ['#7a7e86', '#4a4c52'], rune: ['#9a6aff', '#d8c8ff'],
 };
+const thingCache = new Map();
 function thingSprite(kind, seed) {
-  const g = new Grid(1);
+  const key = `${kind}|${seed}`;
+  if (!thingCache.has(key)) { if (thingCache.size > 400) thingCache.clear(); thingCache.set(key, paintThing(kind, seed)); }
+  return thingCache.get(key);
+}
+function paintThing(kind, seed) {
+  const g = new Grid(1, TILE);
   const r = rng(`${kind}|${seed}`);
   switch (kind) {
     case 'barrel': g.ell(16, 18, 9, 11, 'body'); g.rect(7, 11, 18, 1.5, 'dark'); g.rect(7, 24, 18, 1.5, 'dark'); g.ell(16, 8, 8, 3, 'second'); break;
@@ -280,15 +288,16 @@ function thingSprite(kind, seed) {
   }
   const [c1, c2] = THING_COLOURS[kind] || ['#777777', '#555555'];
   const rp1 = ramp(c1), rp2 = ramp(c2);
-  const out = new Uint8Array(32 * 32 * 4);
+  const out = new Uint8Array(TILE * TILE * 4);
   const flat = new Set(['puddle', 'crack', 'glowcrack', 'moss', 'straw', 'rune', 'shroom', 'chain', 'bones']).has(kind);
-  for (let y = 0; y < 32; y++) for (let x = 0; x < 32; x++) {
-    const v = g.at(x, y), i = (y * 32 + x) * 4;
+  for (let y = 0; y < TILE; y++) for (let x = 0; x < TILE; x++) {
+    const v = g.at(x, y), i = (y * TILE + x) * 4;
     let c = null;
     if (v) {
       const rp = v === 2 ? rp2 : v === 6 ? [hex('#26141a'), hex('#26141a'), hex('#26141a')] : rp1;
-      c = !g.at(x + 1, y) || !g.at(x, y + 1) ? rp[0] : !g.at(x, y - 1) || !g.at(x - 1, y) ? rp[2] : rp[1];
-    } else if (!flat && (g.at(x - 1, y) || g.at(x + 1, y) || g.at(x, y - 1) || g.at(x, y + 1))) c = [20, 12, 18];
+      const edge = (dx, dy) => { for (let k2 = 1; k2 <= F; k2++) if (!g.at(x + dx * k2, y + dy * k2)) return true; return false; };
+      c = edge(1, 0) || edge(0, 1) ? rp[0] : edge(0, -1) || edge(-1, 0) ? rp[2] : rp[1];
+    } else if (!flat) { for (let k2 = 1; k2 <= F && !c; k2++) if (g.at(x - k2, y) || g.at(x + k2, y) || g.at(x, y - k2) || g.at(x, y + k2)) c = [20, 12, 18]; }
     if (c) { out[i] = c[0]; out[i + 1] = c[1]; out[i + 2] = c[2]; out[i + 3] = 255; }
   }
   return out;
@@ -299,14 +308,14 @@ function drawWall(cv, theme) {
   const r = rng(`wall|${theme.name}`);
   const wc = hex(theme.wall), mc = hex(theme.mortar);
   for (let y = 0; y < TILE * WALL; y++) for (let x = 0; x < cv.w; x++) {
-    const row = Math.floor(y / 8), off = row % 2 ? 8 : 0;
-    const mortar = y % 8 === 7 || (x + off) % 16 === 15;
-    cv.px(x, y, mortar ? mc : mix(wc, [0, 0, 0], (r() - 0.4) * 0.15 + (y > 24 ? 0.2 : 0)));
+    const row = Math.floor(y / (8 * F)), off = row % 2 ? 8 * F : 0;
+    const mortar = y % (8 * F) >= 7 * F || (x + off) % (16 * F) >= 15 * F;
+    cv.px(x, y, mortar ? mc : mix(wc, [0, 0, 0], (r() - 0.4) * 0.15 + (y > 24 * F ? 0.2 : 0)));
   }
   for (let t = 0; t < 3; t++) {
     const x = Math.round(cv.w * (t + 0.5) / 3);
-    cv.rect(x - 1, 14, 3, 10, [70, 50, 34]);
-    cv.rect(x - 2, 9, 5, 5, [255, 170, 60]); cv.rect(x - 1, 6, 3, 4, [255, 220, 120]); cv.px(x, 4, [255, 240, 200]);
+    cv.rect(x - F, 14 * F, 3 * F, 10 * F, [70, 50, 34]);
+    cv.rect(x - 2 * F, 9 * F, 5 * F, 5 * F, [255, 170, 60]); cv.rect(x - F, 6 * F, 3 * F, 4 * F, [255, 220, 120]); cv.rect(x, 4 * F, F, F, [255, 240, 200]);
   }
 }
 
@@ -316,22 +325,26 @@ function rockTile(cv, theme, field, x, y, oy) {
   const wc = mix(hex(theme.wall), [0, 0, 0], 0.35), mc = mix(hex(theme.mortar), [0, 0, 0], 0.3);
   const open = (dx, dy) => { const nx = x + dx, ny = y + dy; return nx >= 0 && ny >= 0 && nx < field.w && ny < field.h && field.blocked[ny * field.w + nx] !== 2; };
   for (let j = 0; j < TILE; j++) for (let i = 0; i < TILE; i++) {
-    const row = Math.floor(j / 8), off = row % 2 ? 8 : 0;
-    let c = j % 8 === 7 || (i + off) % 16 === 15 ? mc : mix(wc, [0, 0, 0], (r() - 0.4) * 0.15);
-    if ((open(0, 1) && j > 25) || (open(-1, 0) && i < 2) || (open(1, 0) && i > 29) || (open(0, -1) && j < 2)) c = mix(hex(theme.wall), [255, 240, 220], 0.12);
+    const row = Math.floor(j / (8 * F)), off = row % 2 ? 8 * F : 0;
+    let c = j % (8 * F) >= 7 * F || (i + off) % (16 * F) >= 15 * F ? mc : mix(wc, [0, 0, 0], (r() - 0.4) * 0.15);
+    if ((open(0, 1) && j > TILE - 7 * F) || (open(-1, 0) && i < 2 * F) || (open(1, 0) && i >= TILE - 2 * F) || (open(0, -1) && j < 2 * F)) c = mix(hex(theme.wall), [255, 240, 220], 0.12);
     cv.px(x * TILE + i, oy + y * TILE + j, c);
   }
 }
 
-const spriteCache = new Map();
-function unitSprite(u) {
-  const key = u.side === 'h' ? `h|${u.name}|${u.cls}` : `m|${u.n}`;
-  if (!spriteCache.has(key)) spriteCache.set(key, (u.side === 'h' ? drawHero(u) : drawMonster(u)).rgba);
-  return spriteCache.get(key);
-}
+const unitSprite = (u) => spritePixels(u, TILE * fpOf(u)); // 256×256 sprites, shrunk to the squares they fill
 
 // The battle picture. opts: { scale, reach: Map("x,y" → steps) to highlight, current: unit id, target: unit id }
-export function renderBattle(field, heroes, monsters, { scale = 2, reach = null, current = null, target = null, labels = true } = {}) {
+// The room itself (walls, floor, rubble, grid) never changes during a fight, so it's painted once and reused.
+const backgrounds = new WeakMap();
+export function renderBattle(field, heroes, monsters, { scale = 1, reach = null, current = null, target = null, labels = true } = {}) {
+  const cv = new Canvas(field.w * TILE, (field.h + WALL) * TILE);
+  const oy = WALL * TILE;
+  if (!backgrounds.has(field)) backgrounds.set(field, paintRoom(field));
+  cv.p.set(backgrounds.get(field));
+  return paintCreatures(cv, field, heroes, monsters, { scale, reach, current, target, labels, oy });
+}
+function paintRoom(field) {
   const theme = THEMES.find((t) => t.name === field.theme) || THEMES[0];
   const cv = new Canvas(field.w * TILE, (field.h + WALL) * TILE);
   drawWall(cv, theme);
@@ -342,7 +355,7 @@ export function renderBattle(field, heroes, monsters, { scale = 2, reach = null,
     t.forEach((c, n) => cv.px(x * TILE + (n % TILE), oy + y * TILE + Math.floor(n / TILE), c));
   }
   // shadow under the wall, and torchlight
-  for (let y = 0; y < 10; y++) cv.rect(0, oy + y, cv.w, 1, [0, 0, 0], 0.35 * (1 - y / 10));
+  for (let y = 0; y < 10 * F; y++) cv.rect(0, oy + y, cv.w, 1, [0, 0, 0], 0.35 * (1 - y / (10 * F)));
   for (const th of field.things.filter((t) => !t.block)) cv.sprite(thingSprite(th.kind, `${field.seed}${th.x}${th.y}`), th.x * TILE, oy + th.y * TILE, { alpha: 0.9 });
   // the grid
   for (let y = 0; y < field.h; y++) for (let x = 0; x < field.w; x++) {
@@ -350,11 +363,14 @@ export function renderBattle(field, heroes, monsters, { scale = 2, reach = null,
     if (x > 0) cv.rect(x * TILE, oy + y * TILE, 1, TILE, [0, 0, 0], 0.22);
     if (y > 0) cv.rect(x * TILE, oy + y * TILE, TILE, 1, [0, 0, 0], 0.22);
     // shadow cast by rock on the square below it
-    if (y > 0 && field.blocked[(y - 1) * field.w + x] === 2) for (let j = 0; j < 8; j++) cv.rect(x * TILE, oy + y * TILE + j, TILE, 1, [0, 0, 0], 0.4 * (1 - j / 8));
+    if (y > 0 && field.blocked[(y - 1) * field.w + x] === 2) for (let j = 0; j < 8 * F; j++) cv.rect(x * TILE, oy + y * TILE + j, TILE, 1, [0, 0, 0], 0.4 * (1 - j / (8 * F)));
   }
-  if (reach) for (const k of reach.keys()) { const [x, y] = k.split(',').map(Number); cv.rect(x * TILE + 1, oy + y * TILE + 1, TILE - 1, TILE - 1, [120, 200, 255], 0.18); }
+  return cv.p;
+}
+function paintCreatures(cv, field, heroes, monsters, { scale, reach, current, target, labels, oy }) {
+  if (reach) for (const k of reach.keys()) { const [x, y] = k.split(',').map(Number); cv.rect(x * TILE + F, oy + y * TILE + F, TILE - F, TILE - F, [120, 200, 255], 0.18); }
   for (const th of field.things.filter((t) => t.block)) {
-    cv.rect(th.x * TILE + 4, oy + th.y * TILE + 26, 24, 4, [0, 0, 0], 0.3);
+    cv.rect(th.x * TILE + 4 * F, oy + th.y * TILE + 26 * F, 24 * F, 4 * F, [0, 0, 0], 0.3);
     cv.sprite(thingSprite(th.kind, `${field.seed}${th.x}${th.y}`), th.x * TILE, oy + th.y * TILE);
   }
   // creatures, back rows first so the front ones overlap them
@@ -364,13 +380,13 @@ export function renderBattle(field, heroes, monsters, { scale = 2, reach = null,
     const f = fpOf(u), px = u.bx * TILE, py = oy + u.by * TILE;
     if (u.id === current) { cv.rect(px, py, f * TILE, f * TILE, [255, 210, 90], 0.22); }
     if (u.id === target) { cv.rect(px, py, f * TILE, f * TILE, [255, 70, 60], 0.22); }
-    cv.rect(px + 4 * f, py + f * TILE - 5, f * TILE - 8 * f, 4, [0, 0, 0], 0.35); // shadow
-    cv.sprite(unitSprite(u), px, py, { k: f, flip: u.side === 'm', gray: u.side === 'h' && u.down });
+    cv.rect(px + 4 * f * F, py + f * TILE - 5 * F, f * TILE - 8 * f * F, 4 * F, [0, 0, 0], 0.35); // shadow
+    cv.sprite(unitSprite(u), px, py, { size: f * TILE, flip: u.side === 'm', gray: u.side === 'h' && u.down });
     // health bar
     const pct = Math.max(0, u.hp / u.maxHp);
-    cv.rect(px + 3, py + f * TILE - 3, f * TILE - 6, 3, [20, 10, 12]);
-    cv.rect(px + 4, py + f * TILE - 2, Math.round((f * TILE - 8) * pct), 1, pct < 0.3 ? [220, 70, 60] : pct < 0.6 ? [230, 180, 70] : [110, 200, 100]);
-    if (labels && u.tag) label(cv, u.tag, px + 1, py + 1, u.side === 'h' ? [50, 110, 200] : [170, 50, 45]);
+    cv.rect(px + 3 * F, py + f * TILE - 3 * F, f * TILE - 6 * F, 3 * F, [20, 10, 12]);
+    cv.rect(px + 4 * F, py + f * TILE - 2 * F, Math.round((f * TILE - 8 * F) * pct), F, pct < 0.3 ? [220, 70, 60] : pct < 0.6 ? [230, 180, 70] : [110, 200, 100]);
+    if (labels && u.tag) label(cv, u.tag, px + F, py + F, u.side === 'h' ? [50, 110, 200] : [170, 50, 45]);
   }
   return scale > 1 ? { rgba: scaleUp(cv.p, cv.w, cv.h, scale), w: cv.w * scale, h: cv.h * scale } : { rgba: cv.p, w: cv.w, h: cv.h };
 }
