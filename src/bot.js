@@ -4,7 +4,7 @@ import {
   Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle,
   StringSelectMenuBuilder, MessageFlags,
 } from 'discord.js';
-import { castable } from './game.js';
+import { castable, isBonusSpell } from './game.js';
 import { FLOORS } from './dungeon.js';
 import { battlePng, dist } from './battlemap.js';
 
@@ -127,21 +127,29 @@ export function startBot({ token, delve, turnSeconds: ts = 120 }) {
     run.ui.target[h.id] = target;
     const sq = (m) => `${dist(h, m) * 5} ft`;
     const foeText = foes.map((m) => `${m.id === target ? '🎯 ' : ''}\`${m.tag}\` **${m.name}** (AC ${m.ac}, ${m.hp}/${m.maxHp} HP, ${sq(m)})`).join(' · ');
+    // Green = Action, orange = Bonus Action (Baldur's Gate 3 style); only what can be done right now is listed.
+    const C = { action: '🟢', bonus: '🔶', free: '⚪' };
+    const can = (act) => !run.canDo(h, act);
     const acts = [
-      ...h.attacks.map((a) => ({ label: `⚔️ ${a.name}`, description: `${a.bonus >= 0 ? '+' : ''}${a.bonus} to hit, ${a.dice} ${a.type}${h.perTurn > 1 ? `, ${h.perTurn} attacks` : ''}${a.ranged ? ', ranged' : ''}`, value: `w:${a.name}` })),
-      ...castable(h).map((s) => ({ label: `✨ ${s.name}`, description: `${s.level ? `level ${s.level}` : 'cantrip'}${s.data.heal ? ', heals the most hurt ally' : s.data.aoe ? ', hits an area' : ''}`, value: `s:${s.name}` })),
-    ].slice(0, 25).map((o) => ({ ...o, label: clip(o.label, 100), description: clip(o.description, 100), value: o.value.slice(0, 100) }));
+      ...h.attacks.filter((a) => can({ type: 'attack', weapon: a.name })).map((a) => ({ label: `${C[run.costOf(h, { type: 'attack' })]} ${a.name}`, description: `${a.bonus >= 0 ? '+' : ''}${a.bonus} to hit, ${a.dice} ${a.type}${h.perTurn > 1 ? `, ${h.attacksLeft || h.perTurn} attacks` : ''}${a.ranged ? ', ranged' : ''}`, value: `w:${a.name}` })),
+      ...castable(h).filter((s) => can({ type: 'cast', spell: s.name })).map((s) => ({ label: `${isBonusSpell(s) ? C.bonus : C.action} ${s.name}`, description: `${s.level ? `level ${s.level}` : 'cantrip'}${s.data.heal ? ', heals the most hurt ally' : s.data.aoe ? ', hits an area (friends too)' : ''}`, value: `s:${s.name}` })),
+      ...run.options(h).filter((o) => o.ok).map((o) => ({ label: `${C[o.cost]} ${o.label.replace(/^\S+\s/, '')}`, description: { actionSurge: 'One more action this turn', rage: 'Bonus damage, half damage from weapons', secondWind: 'Heal yourself', offhand: 'Swing your other light weapon', martial: 'An unarmed follow-up strike', shove: 'Push the target 10 ft away', help: 'Get a fallen friend back up' }[o.type] || '', value: `o:${o.type}` })),
+    ].slice(0, 25).map((o) => ({ ...o, label: clip(o.label, 100), description: clip(o.description || ' ', 100), value: o.value.slice(0, 100) }));
+    if (!acts.length) acts.push({ label: 'Nothing left but moving', description: 'Press End turn', value: 'none' });
     const png = battlePng(run.combat.field, run.heroes, run.combat.monsters, { scale: 2, reach: run.reach(h), current: h.id, target });
     return {
-      content: `${h.player ? `<@${h.player}> ` : ''}**${h.name}'s turn** (\`${h.tag}\` on the map, ${bar(h)}, AC ${h.ac}). Round ${run.combat.round}.\nFoes: ${foeText}\n-# Pick a target, then an action: you walk up to it by yourself (${h.speed * 5} ft, shown in blue). ${turnSecs()}s, then the game plays this turn for you.`,
+      content: `${h.player ? `<@${h.player}> ` : ''}**${h.name}'s turn** (\`${h.tag}\` on the map, ${bar(h)}, AC ${h.ac}). Round ${run.combat.round}.\n${'🟢'.repeat(h.res?.action || 0) || '–'} action · ${'🔶'.repeat(h.res?.bonus || 0) || '–'} bonus · 👣 ${h.steps * 5} ft${h.raging ? ' · 😤 raging' : ''}\nFoes: ${foeText}\n-# Pick a target, then actions: you walk up by yourself. Press End turn when you're done. ${turnSecs()}s, then the game finishes the turn for you.`,
       files: [{ attachment: png, name: 'battle.png' }],
       components: [
         row(new StringSelectMenuBuilder().setCustomId(`dd|${run.id}|target|${h.id}`).setPlaceholder('🎯 Target')
           .addOptions(foes.slice(0, 25).map((m) => ({ label: clip(`${m.tag}: ${m.name} (${m.hp}/${m.maxHp} HP, ${sq(m)})`, 100), value: m.id, default: m.id === target })))),
         row(new StringSelectMenuBuilder().setCustomId(`dd|${run.id}|act|${h.id}`).setPlaceholder('Choose an action').addOptions(acts)),
-        row(btn(`dd|${run.id}|dodge|${h.id}`, '🛡️ Dodge'), btn(`dd|${run.id}|dash|${h.id}`, '💨 Dash'), btn(`dd|${run.id}|back|${h.id}`, '🏃 Disengage & back off'),
-          btn(`dd|${run.id}|drink|${h.id}`, `🧪 Potion (${h.potions})`, ButtonStyle.Secondary, !h.potions),
-          btn(`dd|${run.id}|auto|${h.id}`, '🤖 Play it for me')),
+        row(btn(`dd|${run.id}|dash|${h.id}`, `${run.costOf(h, { type: 'dash' }) === 'bonus' ? '🔶' : '🟢'} Dash`, ButtonStyle.Secondary, !can({ type: 'dash' })),
+          btn(`dd|${run.id}|back|${h.id}`, `${run.costOf(h, { type: 'disengage' }) === 'bonus' ? '🔶' : '🟢'} Disengage & back off`, ButtonStyle.Secondary, !can({ type: 'retreat' })),
+          btn(`dd|${run.id}|dodge|${h.id}`, '🟢 Dodge', ButtonStyle.Secondary, !can({ type: 'dodge' })),
+          btn(`dd|${run.id}|drink|${h.id}`, `🔶 Potion (${h.potions})`, ButtonStyle.Secondary, !h.potions || !can({ type: 'potion' })),
+          btn(`dd|${run.id}|end|${h.id}`, '⏭ End turn', ButtonStyle.Success)),
+        row(btn(`dd|${run.id}|auto|${h.id}`, '🤖 Play it for me')),
       ],
       allowedMentions: { users: h.player ? [h.player] : [] },
     };
@@ -212,7 +220,7 @@ export function startBot({ token, delve, turnSeconds: ts = 120 }) {
     const inParty = run.heroes.some((h) => h.player === i.user.id) || i.user.id === run.ownerId;
 
     // Fights: only the character's player (or whoever started the run) can choose.
-    if (['target', 'act', 'dodge', 'dash', 'back', 'drink', 'auto'].includes(what)) {
+    if (['target', 'act', 'dodge', 'dash', 'back', 'drink', 'auto', 'end'].includes(what)) {
       const h = run.hero(arg);
       if (!h || run.waiting?.heroId !== h.id) return i.reply({ content: 'That turn is over.', ...EPH });
       if (h.player !== i.user.id && i.user.id !== run.ownerId) return i.reply({ content: `That's ${h.playerName || 'someone else'}'s character.`, ...EPH });
@@ -221,20 +229,27 @@ export function startBot({ token, delve, turnSeconds: ts = 120 }) {
       const target = run.ui.target[h.id];
       await i.update({ components: [] });
       run.ui.turnMsg = null;
-      if (what === 'auto') return run.autoTurn();
-      if (what === 'dodge') return run.act(h.id, { type: 'dodge' });
-      if (what === 'back') return run.act(h.id, { type: 'retreat' });
-      if (what === 'dash') {
-        // Dash toward the target, then the turn ends (in Discord, moving happens by itself).
-        const t = run.foes().find((m) => m.id === target);
-        run.act(h.id, { type: 'dash' }, { keepTurn: true });
-        if (t && run.waiting?.heroId === h.id) { run.closeIn(h, t, 1); run.act(h.id, { type: 'end' }); }
-        return;
-      }
-      if (what === 'drink') { const down = run.standing().find((x) => x.down); return run.act(h.id, { type: 'potion', target: down?.id }); }
-      const [kind, ...rest] = i.values[0].split(':');
-      const name = rest.join(':');
-      return run.act(h.id, kind === 'w' ? { type: 'attack', weapon: name, target } : { type: 'cast', spell: name, target });
+      // If something can't be done, show the turn again with the reason.
+      try {
+        if (what === 'auto') return run.autoTurn();
+        const K = { keepTurn: true };
+        if (what === 'end') return run.act(h.id, { type: 'end' });
+        if (what === 'dodge') return run.act(h.id, { type: 'dodge' }, K);
+        if (what === 'back') return run.act(h.id, { type: 'retreat' }, K);
+        if (what === 'drink') return run.act(h.id, { type: 'potion' }, K);
+        if (what === 'dash') {
+          // Dash, then walk toward the target (in Discord, moving happens by itself).
+          const t = run.foes().find((m) => m.id === target);
+          run.act(h.id, { type: 'dash' }, K);
+          if (t && run.waiting?.heroId === h.id) { run.closeIn(h, t, 1); run.emit('turn', h); }
+          return;
+        }
+        const [kind, ...rest] = i.values[0].split(':');
+        const name = rest.join(':');
+        if (kind === 'none') return run.emit('turn', h);
+        if (kind === 'o') return run.act(h.id, { type: name, target }, K);
+        return run.act(h.id, kind === 'w' ? { type: 'attack', weapon: name, target } : { type: 'cast', spell: name, target }, K);
+      } catch (err) { if (run.waiting?.heroId === h.id) run.emit('turn', h); throw err; }
     }
 
     if (!inParty) return i.reply({ content: 'Only the party can choose where to go.', ...EPH });

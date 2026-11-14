@@ -36,7 +36,7 @@ const WATER = /piranha|shark|octopus|crab|plesiosaurus|killer whale|quipper|reef
 // Monsters for a fight: an XP budget from the party's level and size, scaled by floor; the boss fight is one big monster plus helpers.
 export function makeEncounter({ edition, level, size, floor, kind = 'fight' }) {
   const list = MONSTERS[edition === '2014' ? '2014' : '2024'];
-  const scale = kind === 'boss' ? 1.6 : kind === 'guard' ? 0.9 : 0.5 + 0.08 * (floor - 1);
+  const scale = kind === 'boss' ? 1.8 : kind === 'guard' ? 1.0 : 0.6 + 0.09 * (floor - 1);
   // Small parties and level 1 characters are fragile: go easier on them.
   const easy = (size === 1 ? 0.55 : size === 2 ? 0.8 : 1) * (level === 1 ? 0.8 : 1);
   const budget = MEDIUM[Math.min(19, level - 1)] * size * scale * easy;

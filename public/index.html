@@ -285,15 +285,16 @@ function render(d) {
   } else if (fight && d.actions) {
     const a = d.actions, foes = d.foes.filter((f) => f.hp > 0);
     if (!foes.some((f) => f.id === target)) target = foes.sort((x, y) => x.hp - y.hp)[0]?.id;
-    const H = `heroId:'${a.heroId}'`;
-    ctrl = `<p style="margin:0 0 8px"><b>${esc(d.turn.name)}'s turn</b>: ${a.steps} squares of movement left${a.acted ? ', action used' : ''}. ${aim ? `<b style="color:var(--gold)">Click a square to aim ${esc(aim.name)}</b> (everyone in the blast is hit, friends too). <a href="#" onclick="aim=null;render(data);return false" style="color:var(--gold)">Cancel</a>` : 'Click a blue square to move, a monster to target it, then pick an action. Actions walk you closer by themselves.'}</p>
-      ${a.acted ? '' : `<div class="row">${a.weapons.map((w) => `<button class="go" onclick="act('act',{${H},type:'attack',weapon:${esc(JSON.stringify(w.name))},target})">⚔️ ${esc(w.name)} <small>${esc(w.text)}</small></button>`).join('')}</div>
-      <div class="row" style="margin-top:6px">${a.spells.map((s) => `<button ${s.ok ? '' : 'disabled'} onclick="${s.aoe && !s.self ? `aim=${esc(JSON.stringify({ name: s.name, radius: s.radius, heroId: a.heroId }))};render(data)` : `act('act',{${H},type:'cast',spell:${esc(JSON.stringify(s.name))},target})`}">✨ ${esc(s.name)} <small>${s.level || 'c'}${s.heal ? ' 💚' : s.aoe ? ' 💥' : ''}</small></button>`).join('')}</div>
-      <div class="row" style="margin-top:6px"><button onclick="act('act',{${H},type:'dodge'})">🛡️ Dodge</button>
-      <button onclick="act('act',{${H},type:'dash'})">💨 Dash</button><button onclick="act('act',{${H},type:'disengage'})">🏃 Disengage</button>
-      <button ${a.potions ? '' : 'disabled'} onclick="act('act',{${H},type:'potion'})">🧪 Potion (${a.potions})</button>
-      <button onclick="act('auto')">🤖 Play it for me</button></div>`}
-      <div class="row" style="margin-top:6px"><button class="go" onclick="act('act',{${H},type:'end'})">⏭ End turn</button></div>`;
+    const H = `heroId:'${a.heroId}'`, T = esc(JSON.stringify(target || null));
+    const C = { action: '🟢', bonus: '🔶', free: '⚪' };
+    const ab = (x, on) => `<button ${x.ok ? '' : 'disabled'} title="${esc(x.why || '')}" onclick="${on}">${C[x.cost] || ''} ${x.label}</button>`;
+    ctrl = `<p style="margin:0 0 8px"><b>${esc(d.turn.name)}'s turn</b>: ${'🟢'.repeat(a.res.action) || '–'} action · ${'🔶'.repeat(a.res.bonus) || '–'} bonus · 👣 ${a.steps * 5} ft${a.res.attacksLeft ? ` · ⚔️ ${a.res.attacksLeft} attacks left` : ''}${a.raging ? ' · 😤 raging' : ''}.
+      ${aim ? `<b style="color:var(--gold)">Click a square to aim ${esc(aim.name)}</b> (everyone in the blast is hit, friends too). <a href="#" onclick="aim=null;render(data);return false" style="color:var(--gold)">Cancel</a>` : 'Click a blue square to move, a monster to target it.'}</p>
+      <div class="row">${a.weapons.map((w) => ab({ ...w, label: `⚔️ ${esc(w.name)} <small>${esc(w.text)}</small>` }, `act('act',{${H},type:'attack',weapon:${esc(JSON.stringify(w.name))},target:${T},oneSwing:true})`)).join('')}</div>
+      <div class="row" style="margin-top:6px">${a.spells.map((s) => ab({ ...s, label: `✨ ${esc(s.name)} <small>${s.level || 'c'}${s.heal ? ' 💚' : s.aoe ? ' 💥' : ''}</small>` }, s.aoe && !s.self ? `aim=${esc(JSON.stringify({ name: s.name, radius: s.radius, heroId: a.heroId }))};render(data)` : `act('act',{${H},type:'cast',spell:${esc(JSON.stringify(s.name))},target:${T}})`)).join('')}</div>
+      <div class="row" style="margin-top:6px">${a.basics.map((x) => ab(x, `act('act',{${H},type:'${x.type}'})`)).join('')}</div>
+      <div class="row" style="margin-top:6px">${a.options.map((x) => ab(x, `act('act',{${H},type:'${x.type}',target:${T}})`)).join('')}</div>
+      <div class="row" style="margin-top:6px"><button class="go" onclick="act('act',{${H},type:'end'})">⏭ End turn</button><button onclick="act('auto')">🤖 Play it for me</button></div>`;
   } else if (fight) ctrl = `<p style="color:var(--dim);margin:0">Waiting for ${esc(d.turn?.name || '…')}${d.source === 'discord' ? ' in Discord' : ''}.</p>`;
   const ended = d.state === 'ended' ? `<div class="banner">🏁 ${esc(d.outcome)}${d.recap ? `<br><small>${{ writing: '📝 Sent to Note Tiger: the recap will show up in #recaps.', sending: 'Sending to Note Tiger…', failed: 'Couldn\'t send to Note Tiger: ' + esc(d.recap.error), off: 'Note Tiger isn\'t connected, so no recap.' }[d.recap.status] || ''}</small>` : ''}</div>` : '';
   const bf = fight && d.battle ? battleView(d) : '';

@@ -49,6 +49,9 @@
   .cells .f { cursor:crosshair; } .cells .t { box-shadow: inset 0 0 0 3px #ff5a4a; }
   .cells .a { background:#ff7a3a66 !important; }
   .panel { position:sticky; bottom:0; z-index:4; }
+  .ab.action { border-color:#2f6b2a; } .ab.bonus { border-color:#9a5a12; } .ab.go.action { background:#f08a24; }
+  .res { display:flex; gap:14px; flex-wrap:wrap; margin:6px 0 2px; font-family:var(--px); font-size:15px; }
+  .pip { display:inline-block; margin-right:2px; } .pip.act { color:#6fd47a; } .pip.bon { color:#f0a040; } .pip.used { color:#5a5048; }
   .turnbar { background:#2b2112; border:2px solid var(--gold); box-shadow:4px 4px 0 var(--ink); padding:10px 12px; border-radius:3px; margin:10px 0; }
   .log { max-height:260px; overflow:auto; font-size:14px; } .log p { margin:0 0 5px; } .log b { color:var(--gold); }
   .foe { display:flex; align-items:center; gap:8px; padding:3px 0; cursor:pointer; } .foe img { width:36px; height:36px; image-rendering:pixelated; background:#2a231d; border-radius:3px; }
@@ -259,18 +262,30 @@ function cell(x, y) {
   if (u && u.side === 'm') { target = u.id; return renderRun(); }
   if (data.actions && data.battle.reach.includes(`${x},${y}`) && !u) act('act', { heroId: data.actions.heroId, type: 'move', to: [x, y] });
 }
+// Baldur's Gate 3 style: green = Action, orange = Bonus Action, grey = free. Movement is the blue squares.
+const COST = { action: '🟢', bonus: '🔶', free: '⚪' };
+function abtn(x, onclick, cls = '') {
+  return `<button class="ab ${x.cost} ${cls}" ${x.ok ? '' : 'disabled'} title="${esc(x.why || '')}" onclick="${onclick}">${COST[x.cost] || ''} ${x.label}</button>`;
+}
 function turnBar(d) {
   const a = d.actions;
-  if (!a) return d.state === 'combat' ? `<div class="turnbar">⏳ ${d.turn ? `<b>${esc(d.turn.name)}</b>'s turn${d.turn.kind === 'm' ? '' : d.mine.includes(d.turn.id) ? '' : '.'}` : 'Monsters are moving…'}</div>` : '';
+  if (!a) return d.state === 'combat' ? `<div class="turnbar">⏳ ${d.turn ? `<b>${esc(d.turn.name)}</b>'s turn.` : 'Monsters are moving…'}</div>` : '';
   const H = `heroId:'${a.heroId}'`;
+  const T = esc(JSON.stringify(target || null));
   const tname = d.foes.find((f) => f.id === target)?.name || 'the nearest foe';
+  const pips = (n, ch, cls) => Array.from({ length: Math.max(n, 0) }, () => `<span class="pip ${cls}">${ch}</span>`).join('') || `<span class="pip used">${ch}</span>`;
+  const w = a.weapons.map((x) => abtn({ ...x, label: `⚔️ ${esc(x.name)} <small>${esc(x.text)}</small>` }, `act('act',{${H},type:'attack',weapon:${esc(JSON.stringify(x.name))},target:${T},oneSwing:true})`)).join('');
+  const sp = a.spells.map((x) => abtn({ ...x, label: `✨ ${esc(x.name)} <small>${x.level ? `lvl ${x.level}` : 'cantrip'}${x.heal ? ' 💚' : x.aoe ? ' 💥' : ''}</small>` },
+    x.aoe && !x.self ? `aim=${esc(JSON.stringify({ name: x.name, radius: x.radius, heroId: a.heroId }))};renderRun()` : `act('act',{${H},type:'cast',spell:${esc(JSON.stringify(x.name))},target:${T}})`)).join('');
+  const basics = a.basics.map((x) => abtn(x, `act('act',{${H},type:'${x.type}'})`)).join('');
+  const feats = a.options.map((x) => abtn(x, `act('act',{${H},type:'${x.type}',target:${T}})`)).join('');
   return `<div class="turnbar"><div class="row" style="justify-content:space-between"><b style="font-family:var(--px);font-size:17px">⚔️ Your turn: ${esc(d.turn.name)}</b><span id="clock" class="muted"></span></div>
+    <div class="res"><span title="Actions">${pips(a.res.action, '●', 'act')} Action</span><span title="Bonus actions">${pips(a.res.bonus, '▲', 'bon')} Bonus</span>
+      <span title="Movement">👣 ${a.steps * 5} ft</span>${a.res.attacksLeft ? `<span>⚔️ ${a.res.attacksLeft} attack${a.res.attacksLeft > 1 ? 's' : ''} left</span>` : ''}${a.raging ? '<span>😤 Raging</span>' : ''}</div>
     <p style="margin:4px 0 8px" class="muted">${aim ? `<b style="color:var(--gold)">Tap a square to aim ${esc(aim.name)}, then tap it again to cast.</b> Everyone in the blast is hit, friends too. <a href="#" onclick="aim=null;renderRun();return false" style="color:var(--gold)">Cancel</a>`
-      : `${a.steps * 5} ft of movement left (blue squares)${a.acted ? '. Action used: move if you like, then End turn.' : `. Target: <b>${esc(tname)}</b> (tap a monster to change). Attacking walks you closer by itself.`}`}</p>
-    ${a.acted ? '' : `<div class="row">${a.weapons.map((w) => `<button class="go" onclick="act('act',{${H},type:'attack',weapon:${esc(JSON.stringify(w.name))},target})">⚔️ ${esc(w.name)} <small>${esc(w.text)}</small></button>`).join('')}</div>
-    ${a.spells.length ? `<div class="row" style="margin-top:6px">${a.spells.map((s) => `<button ${s.ok ? '' : 'disabled'} onclick="${s.aoe && !s.self ? `aim=${esc(JSON.stringify({ name: s.name, radius: s.radius, heroId: a.heroId }))};renderRun()` : `act('act',{${H},type:'cast',spell:${esc(JSON.stringify(s.name))},target})`}">✨ ${esc(s.name)} <small>${s.level ? `lvl ${s.level}` : 'cantrip'}${s.heal ? ' 💚' : s.aoe ? ' 💥' : ''}</small></button>`).join('')}</div>` : ''}
-    <div class="row" style="margin-top:6px"><button onclick="act('act',{${H},type:'dash'})">💨 Dash</button><button onclick="act('act',{${H},type:'disengage'})">🏃 Disengage</button>
-      <button onclick="act('act',{${H},type:'dodge'})">🛡️ Dodge</button><button ${a.potions ? '' : 'disabled'} onclick="act('act',{${H},type:'potion'})">🧪 Potion (${a.potions})</button></div>`}
+      : `Target: <b>${esc(tname)}</b> (tap a monster to change). Tap blue squares to move. Attacks walk you closer by themselves.`}</p>
+    <div class="row">${w}</div>${sp ? `<div class="row" style="margin-top:6px">${sp}</div>` : ''}
+    <div class="row" style="margin-top:6px">${basics}</div>${feats ? `<div class="row" style="margin-top:6px">${feats}</div>` : ''}
     <div class="row" style="margin-top:8px"><button class="ok" onclick="act('act',{${H},type:'end'})">⏭ End turn</button><button onclick="act('auto')">🤖 Play it for me</button></div></div>`;
 }
 function foesCard(d) {

@@ -208,9 +208,9 @@ export function startPlayers({ delve, port = 3091, password = () => '', token = 
           const h = run.hero(b.heroId);
           if (!h || h.player !== pid(me)) return send(res, 403, { error: 'That\'s not your character.' });
           const { type, weapon, spell, target, to, at } = b;
-          if (!['move', 'attack', 'cast', 'dodge', 'dash', 'disengage', 'potion', 'retreat', 'end'].includes(type)) return send(res, 400, { error: 'Unknown action' });
+          if (!['move', 'attack', 'cast', 'dodge', 'dash', 'disengage', 'potion', 'retreat', 'end', 'offhand', 'martial', 'rage', 'secondWind', 'actionSurge', 'shove', 'help'].includes(type)) return send(res, 400, { error: 'Unknown action' });
           if (type === 'cast' && !castable(h).some((s) => s.name === spell)) return send(res, 400, { error: 'You can\'t cast that right now.' });
-          run.act(h.id, { type, weapon, spell, target, to, at: Array.isArray(at) ? at.slice(0, 2).map(Number) : undefined }, { keepTurn: true });
+          run.act(h.id, { type, weapon, spell, target, to, oneSwing: Boolean(b.oneSwing), at: Array.isArray(at) ? at.slice(0, 2).map(Number) : undefined }, { keepTurn: true });
         } else if (a === 'auto') {
           if (!run.waiting || !mine.some((h) => h.id === run.waiting.heroId)) return send(res, 400, { error: 'It isn\'t your turn.' });
           run.autoTurn();

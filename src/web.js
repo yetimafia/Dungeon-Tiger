@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { MONSTERS } from './dungeon.js';
 import { spritePng, bodyPlan, heroPng } from './sprites.js';
 import { battlePng } from './battlemap.js';
-import { spellInfo } from './game.js';
+import { spellInfo, weaponReach } from './game.js';
 import { SETTINGS, settings, writeEnv, findNoteTiger, linkNoteTiger, VERSION } from './config.js';
 import { updateStatus, checkForUpdate, installUpdate } from './updater.js';
 
@@ -184,10 +184,16 @@ export function actionsFor(run) {
   const cur = run.current();
   if (!cur || cur.kind !== 'h' || run.waiting?.heroId !== cur.id) return null;
   const h = cur.who;
+  const check = (act) => { const why = run.canDo(h, act); return { cost: run.costOf(h, act), ok: !why, why }; };
   return {
     heroId: h.id, potions: h.potions,
-    weapons: h.attacks.map((a) => ({ name: a.name, text: `${a.bonus >= 0 ? '+' : ''}${a.bonus}, ${a.dice}${h.perTurn > 1 ? ` ×${h.perTurn}` : ''}` })),
-    spells: h.spells.map((s) => ({ name: s.name, level: s.level, heal: !!s.data.heal, aoe: !!s.data.aoe, ...spellInfo(s), ok: s.level === 0 || Object.entries(h.slots).some(([l, x]) => Number(l) >= s.level && x.max - (x.used || 0) > 0) })),
-    acted: !!h.acted, steps: h.steps, disengaged: !!h.disengaged,
+    // Action, bonus action and movement left this turn (Baldur's Gate 3 style).
+    res: { action: h.res?.action ?? 0, bonus: h.res?.bonus ?? 0, attacksLeft: h.attacksLeft || 0, perTurn: h.perTurn },
+    weapons: h.attacks.map((a) => ({ name: a.name, text: `${a.bonus >= 0 ? '+' : ''}${a.bonus}, ${a.dice}${h.perTurn > 1 ? `, ${h.perTurn} attacks` : ''}`, ranged: weaponReach(a) > 1, ...check({ type: 'attack', weapon: a.name }) })),
+    spells: h.spells.map((s) => ({ name: s.name, level: s.level, heal: !!s.data.heal, aoe: !!s.data.aoe, ...spellInfo(s), ...check({ type: 'cast', spell: s.name }),
+      slotOk: s.level === 0 || Object.entries(h.slots).some(([l, x]) => Number(l) >= s.level && x.max - (x.used || 0) > 0) })).map((s) => ({ ...s, ok: s.ok && s.slotOk })),
+    basics: [['dash', '💨 Dash'], ['disengage', '🏃 Disengage'], ['dodge', '🛡️ Dodge'], ['potion', `🧪 Potion (${h.potions})`]].map(([type, label]) => ({ type, label, ...check({ type }), ...(type === 'potion' && !h.potions ? { ok: false, why: 'No potions.' } : {}) })),
+    options: run.options(h),
+    steps: h.steps, disengaged: !!h.disengaged, raging: !!h.raging,
   };
 }

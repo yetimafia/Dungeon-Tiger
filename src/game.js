@@ -54,8 +54,28 @@ export function toHero(c, { player = null, playerName = '' } = {}) {
     init: c.initiative ?? m.dex, attacks, perTurn: attacksPerTurn(c), sneak: isRogue ? Math.ceil(lvl / 2) : 0,
     spells, slots: JSON.parse(JSON.stringify(c.spellcasting?.slots || {})), dc: sa ? 8 + pb + m[sa] : 0, spellAtk: sa ? pb + m[sa] : 0, castMod: sa ? m[sa] : 0,
     potions, hitDie, hdUsed: 0, gold: c.money?.gp || 0, items: [], down: false, dead: false, stable: false, ds: { s: 0, f: 0 }, dodging: false,
+    ...classAbilities(c, attacks),
   };
 }
+// What a character's classes let them do with actions and bonus actions (Baldur's Gate 3 style).
+const LIGHT = /dagger|shortsword|scimitar|handaxe|light hammer|sickle|club/i;
+function classAbilities(c, attacks) {
+  const lv = (n) => (c.classes || []).filter((k) => new RegExp(n, 'i').test(k.name)).reduce((a, k) => a + k.level, 0);
+  const fighter = lv('fighter'), rogue = lv('rogue'), barb = lv('barbarian'), monk = lv('monk');
+  const ab = { abilities: {}, uses: {}, maxUses: {} };
+  if (fighter >= 1) { ab.abilities.secondWind = true; ab.maxUses.secondWind = fighter >= 10 ? 4 : fighter >= 4 ? 3 : 2; }
+  if (fighter >= 2) { ab.abilities.actionSurge = true; ab.maxUses.actionSurge = fighter >= 17 ? 2 : 1; }
+  if (rogue >= 2) ab.abilities.cunning = true;
+  if (barb >= 1) { ab.abilities.rage = barb >= 16 ? 4 : barb >= 9 ? 3 : 2; ab.maxUses.rage = barb >= 17 ? 6 : barb >= 12 ? 5 : barb >= 6 ? 4 : barb >= 3 ? 3 : 2; }
+  if (monk >= 1) ab.abilities.martialArts = monk >= 17 ? '1d12' : monk >= 11 ? '1d10' : monk >= 5 ? '1d8' : '1d6';
+  // Two light weapons: a bonus-action swing with the other one.
+  if (attacks.filter((a) => LIGHT.test(a.name) && !a.ranged).length >= 2 || attacks.some((a) => LIGHT.test(a.name) && /×2|x2|pair/i.test(a.name))) ab.abilities.offhand = true;
+  ab.uses = { ...ab.maxUses };
+  return ab;
+}
+// Spells cast with a bonus action instead of an action.
+const BONUS_SPELLS = /healing word|spiritual weapon|misty step|hex$|hunter's mark|shillelagh|sanctuary|shield of faith|expeditious retreat|divine favor|searing smite|thunderous smite|wrathful smite|branding smite|flame blade|magic weapon|healing spirit|ensnaring strike|hail of thorns/i;
+export const isBonusSpell = (sp) => BONUS_SPELLS.test(sp.name);
 
 // ---------- spells in a fight ----------
 function spellDice(sp, hero, slot) {
@@ -189,6 +209,7 @@ export class Run extends EventEmitter {
       h.down = false; h.stable = false; h.ds = { s: 0, f: 0 };
       h.hp = h.maxHp; h.hdUsed = 0;
       for (const s of Object.values(h.slots)) s.used = 0;
+      h.uses = { ...(h.maxUses || {}) };
       this.heroChanged(h);
     }
     this.say('🛏️ **The party rests** and wakes up fully healed, spells back.');
@@ -214,6 +235,7 @@ export class Run extends EventEmitter {
       if (h.down) { h.down = false; h.stable = false; h.hp = Math.max(1, h.hp); h.ds = { s: 0, f: 0 }; }
       while (h.hp < h.maxHp / 2 && h.hdUsed < h.level) { h.hdUsed++; h.hp = Math.min(h.maxHp, h.hp + Math.max(1, roll(`1d${h.hitDie}`) + h.m.con)); }
       if (/warlock/i.test(h.cls)) for (const s of Object.values(h.slots)) s.used = 0;
+      for (const k of ['secondWind', 'actionSurge']) if (h.maxUses?.[k]) h.uses[k] = h.maxUses[k];
       if (h.hp !== before) lines.push(`${h.name} ${before} → ${h.hp} HP.`);
       this.heroChanged(h);
     }
@@ -315,8 +337,9 @@ export class Run extends EventEmitter {
       if (cur.kind === 'm') { if (cur.who.hp > 0) this.monsterTurn(cur.who); continue; }
       const h = cur.who;
       if (h.dead) continue;
-      h.dodging = false; h.disengaged = false; h.acted = false; h.reactionUsed = false;
+      h.dodging = false; h.disengaged = false; h.reactionUsed = false;
       h.steps = h.speed;
+      h.res = { action: 1, bonus: 1 }; h.attacksLeft = 0; h.attackedThisTurn = false; h.sneakUsed = false;
       if (h.down) { this.deathSave(h); continue; }
       if (this.auto || !h.player) { this.heroAI(h); continue; }
       this.waiting = { heroId: h.id, since: Date.now() };
@@ -332,6 +355,7 @@ export class Run extends EventEmitter {
     this.waiting = null;
     // Anyone down but not dead gets back up with 1 HP after the fight.
     for (const h of this.heroes) if (h.down && !h.dead) { h.down = false; h.hp = 1; h.ds = { s: 0, f: 0 }; this.heroChanged(h); }
+    for (const h of this.heroes) h.raging = false;
     this.say(`✅ The fight is won.${r.loot ? ' There\'s loot to take.' : ''}`);
     if (r.kind === 'boss') return this.end(`Victory! The party beat the master of the dungeon on floor ${FLOORS}.`, 'win');
     this.emit('map');
@@ -369,7 +393,8 @@ export class Run extends EventEmitter {
       const r = d20(t.dodging ? -1 : 0);
       const ok = r === 20 || (r !== 1 && r + w.b >= t.ac);
       if (!ok) return this.say(`⚡ ${a.name} swipes at ${t.name} as they pull away, and misses.`);
-      const dmg = w.d.reduce((n, x) => n + roll(x, { crit: r === 20 }), 0);
+      let dmg = w.d.reduce((n, x) => n + roll(x, { crit: r === 20 }), 0);
+      if (t.raging) dmg = Math.floor(dmg / 2);
       this.hurt(t, dmg, { quiet: true, crit: r === 20 });
       return this.say(`⚡ ${a.name} catches ${t.name} as they pull away: ${dmg} damage.${this.dropsText([t])}`);
     }
@@ -394,8 +419,34 @@ export class Run extends EventEmitter {
 
   // A hero's action. act: { type: 'move'|'attack'|'cast'|'dodge'|'potion'|'retreat', weapon, spell, target, to: [x, y] }
   // Moving doesn't end the turn; everything else does (moving closer first if needed).
-  // keepTurn (website and GM page): after the action you can still move, then press End turn.
-  // Without it (Discord) the action ends the turn.
+  // Each turn: one Action, one Bonus Action and your movement, like Baldur's Gate 3. Abilities can add more
+  // (Action Surge gives another Action). keepTurn: the turn goes on until End turn, or until everything's used.
+  // Without it (the game playing a character) one action ends the turn.
+  costOf(h, act) {
+    const t = act.type;
+    if (t === 'cast') { const sp = h.spells.find((x) => x.name === act.spell); return sp && isBonusSpell(sp) ? 'bonus' : 'action'; }
+    if (t === 'potion') return !act.target || act.target === h.id ? 'bonus' : 'action';
+    if ((t === 'dash' || t === 'disengage') && h.abilities?.cunning && h.res.bonus > 0) return 'bonus';
+    if (['offhand', 'martial', 'rage', 'secondWind', 'shove'].includes(t)) return 'bonus';
+    if (t === 'actionSurge') return 'free';
+    if (t === 'attack' && h.attacksLeft > 0) return 'free'; // more swings from the same Attack action (Extra Attack)
+    return 'action';
+  }
+  canDo(h, act) {
+    const cost = this.costOf(h, act);
+    const t = act.type;
+    if (t === 'offhand' && !(h.abilities?.offhand && h.attackedThisTurn)) return 'Attack with a light weapon first, then swing the other one.';
+    if (t === 'martial' && !(h.abilities?.martialArts && h.attackedThisTurn)) return 'Attack first, then follow up with an unarmed strike.';
+    if (t === 'rage' && (!h.abilities?.rage || h.raging || !h.uses.rage)) return h.raging ? 'Already raging.' : 'No rages left until you rest.';
+    if (t === 'secondWind' && (!h.abilities?.secondWind || !h.uses.secondWind)) return 'No Second Wind left until you rest.';
+    if (t === 'actionSurge' && (!h.abilities?.actionSurge || !h.uses.actionSurge)) return 'No Action Surge left until you rest.';
+    if (t === 'potion' && !h.potions) return 'No potions left.';
+    if (t === 'help' && !this.heroes.some((x) => x.down && !x.dead)) return 'Nobody is down.';
+    if (t === 'potion' && (!act.target || act.target === h.id) && h.hp >= h.maxHp) return 'You\'re at full HP.';
+    if (cost === 'action' && h.res.action < 1) return 'No action left this turn.';
+    if (cost === 'bonus' && h.res.bonus < 1) return 'No bonus action left this turn.';
+    return '';
+  }
   act(heroId, act, { keepTurn = false } = {}) {
     if (this.state !== 'combat') throw new Error('There\'s no fight going on.');
     const cur = this.current();
@@ -411,16 +462,74 @@ export class Run extends EventEmitter {
       return;
     }
     if (act.type === 'end') { this.waiting = null; return this.next(); }
-    if (h.acted) throw new Error('You\'ve used your action this turn. Move, or end your turn.');
+    const why = this.canDo(h, act);
+    if (why) throw new Error(why);
+    const cost = this.costOf(h, act);
+    if (cost === 'action') h.res.action--;
+    if (cost === 'bonus') h.res.bonus--;
     this.doAction(h, act);
-    h.acted = true;
-    const goOn = keepTurn && this.state === 'combat' && this.foes().length && !h.down && !h.dead && (h.steps > 0);
+    const left = h.res.action > 0 || h.res.bonus > 0 || h.attacksLeft > 0 || h.steps > 0;
+    const goOn = keepTurn && left && this.state === 'combat' && this.foes().length && !h.down && !h.dead;
     if (goOn) { this.emit('turn', h); return; }
     this.waiting = null;
     this.next();
   }
+  // What this character can do right now, for the screens: each with its cost and whether it's possible.
+  options(h) {
+    const o = [];
+    const add = (type, label, extra = {}) => { const act = { type, ...extra }; const why = this.canDo(h, act); o.push({ type, label, cost: this.costOf(h, act), ok: !why, why, ...extra }); };
+    if (h.abilities?.actionSurge) add('actionSurge', `⚡ Action Surge (${h.uses.actionSurge} left)`);
+    if (h.abilities?.rage && !h.raging) add('rage', `😤 Rage (${h.uses.rage} left)`);
+    if (h.abilities?.secondWind) add('secondWind', `❤️‍🩹 Second Wind (${h.uses.secondWind} left)`);
+    if (h.abilities?.offhand) add('offhand', '🗡️ Off-hand attack');
+    if (h.abilities?.martialArts) add('martial', '👊 Martial Arts strike');
+    add('shove', '🤚 Shove');
+    add('help', '🤝 Help a fallen friend up');
+    return o;
+  }
   doAction(h, act) {
     const foes = this.foes();
+    if (act.type === 'actionSurge') { h.uses.actionSurge--; h.res.action++; return this.say(`⚡ ${h.name} uses **Action Surge**: one more action this turn!`); }
+    if (act.type === 'rage') { h.uses.rage--; h.raging = true; this.heroChanged(h); return this.say(`😤 ${h.name} flies into a **Rage**: +${h.abilities.rage} damage, and weapon hits do half damage to them.`); }
+    if (act.type === 'secondWind') { h.uses.secondWind--; const n = this.heal(h, roll(`1d10+${h.level}`)); return this.say(`❤️‍🩹 ${h.name} gets a **Second Wind**: +${n} HP.`); }
+    if (act.type === 'help') {
+      const t = (act.target && this.hero(act.target)) || this.heroes.filter((x) => x.down && !x.dead).sort((a, b) => dist(h, a) - dist(h, b))[0];
+      if (!t || !t.down) return this.say(`${h.name} looks for someone to help, but nobody's down.`, { story: false });
+      if (!this.closeIn(h, t, 1)) return this.say(`${h.name} runs toward ${t.name} but can't reach them yet.`);
+      t.down = false; t.stable = false; t.hp = Math.max(1, t.hp); t.ds = { s: 0, f: 0 };
+      this.heroChanged(t);
+      return this.say(`🤝 ${h.name} hauls ${t.name} back to their feet (1 HP).`);
+    }
+    if (act.type === 'shove') {
+      const t = foes.find((m) => m.id === act.target) || nearest(h, foes);
+      if (!this.closeIn(h, t, 1)) return this.say(`${h.name} can't reach ${t.name} to shove them.`, { story: false });
+      if ((t.fp || 1) > 2) return this.say(`${t.name} is far too big to shove.`, { story: false });
+      const mine = d20() + h.m.str + h.pb, theirs = d20() + Math.max(mod(t.ab[0]), mod(t.ab[1]));
+      if (mine < theirs) return this.say(`🤚 ${h.name} tries to shove ${t.name}, who doesn't budge.`);
+      // Push two squares straight away from the hero, stopping at walls and other creatures.
+      const dx = Math.sign(t.bx - h.bx), dy = Math.sign(t.by - h.by);
+      let moved = 0;
+      for (let i = 0; i < 2; i++) {
+        const spot = approach(this.field(), this.units(), { ...t, steps: 1 }, { bx: t.bx + dx * 5, by: t.by + dy * 5, fp: 1 }, 0, 1);
+        if (!spot || (spot.x === t.bx && spot.y === t.by) || Math.sign(spot.x - t.bx) !== dx || Math.sign(spot.y - t.by) !== dy) break;
+        t.bx = spot.x; t.by = spot.y; moved++;
+      }
+      this.emit('moved', t);
+      return this.say(`🤚 ${h.name} shoves ${t.name} ${moved ? `${moved * 5} feet back` : 'against the wall'}.`);
+    }
+    if (act.type === 'offhand' || act.type === 'martial') {
+      const w = act.type === 'martial'
+        ? { name: 'Unarmed strike', bonus: Math.max(h.m.str, h.m.dex) + h.pb, dice: `${h.abilities.martialArts}+${Math.max(h.m.str, h.m.dex)}`, ranged: false }
+        : (() => { const lw = h.attacks.filter((a) => LIGHT.test(a.name) && !a.ranged); const x = lw[1] || lw[0]; return { ...x, dice: x.dice.replace(/[+-]\d+$/, '') }; })();
+      const t = foes.find((m) => m.id === act.target) || nearest(h, foes);
+      if (!this.closeIn(h, t, 1)) return this.say(`${h.name} can't reach ${t.name} for a follow-up.`, { story: false });
+      const r = d20();
+      const ok = r === 20 || (r !== 1 && r + w.bonus >= t.ac);
+      if (!ok) return this.say(`${act.type === 'martial' ? '👊' : '🗡️'} ${h.name} (${w.name}) misses ${t.name}.`);
+      const dmg = roll(w.dice, { crit: r === 20 }) + (h.raging ? h.abilities.rage : 0);
+      this.damageMonster(t, dmg);
+      return this.say(`${act.type === 'martial' ? '👊' : '🗡️'} ${h.name} follows up (${w.name}): ${r === 20 ? 'crits' : 'hits'} ${t.name} for ${dmg}.${this.deathsText([t])}`);
+    }
     if (act.type === 'retreat') {
       h.disengaged = true;
       const spot = retreat(this.field(), this.units(), h, foes, h.steps ?? h.speed);
@@ -495,30 +604,36 @@ export class Run extends EventEmitter {
       this.heroChanged(h);
       return;
     }
-    // Weapon attacks (Extra Attack gives more; Sneak Attack once a turn). Ranged attacks with a foe next to you have disadvantage.
+    // Weapon attacks: the Attack action gives one swing, or more with Extra Attack. With keepTurn (a person playing)
+    // each click is one swing, so you can move or switch targets in between; otherwise all swings happen at once.
     const w = h.attacks.find((a) => a.name === act.weapon) || h.attacks[0];
+    h.lastWeapon = w;
     const range = weaponRange(w);
     const want = foes.find((m) => m.id === act.target) || nearest(h, foes);
-    if (!this.closeIn(h, want, range)) return this.say(`🏃 ${h.name} moves toward ${want.name}.`, { story: false });
+    if (h.attacksLeft <= 0) { h.attacksLeft = h.perTurn; }
+    if (!this.closeIn(h, want, range)) { return this.say(`🏃 ${h.name} moves toward ${want.name}.`, { story: false }); }
+    const swings = act.allSwings === false ? 1 : act.oneSwing ? 1 : h.attacksLeft;
     const lines = [];
-    let sneakUsed = false;
     const hit = [];
-    for (let i = 0; i < h.perTurn; i++) {
+    for (let i = 0; i < swings && h.attacksLeft > 0; i++) {
       const live = this.foes().filter((m) => dist(h, m) <= range);
       if (!live.length) break;
+      h.attacksLeft--;
+      h.attackedThisTurn = true;
       const m = live.find((x) => x.id === want.id) || nearest(h, live);
       const r = d20(range > 1 && this.enemiesNext(h).length ? -1 : 0);
       const ok = r === 20 || (r !== 1 && r + w.bonus >= m.ac);
       if (!ok) { lines.push(`misses ${m.name}`); continue; }
       let dmg = roll(w.dice, { crit: r === 20 });
       let sneak = false;
-      if (h.sneak && !sneakUsed && (w.finesse || w.ranged)) { dmg += roll(`${h.sneak}d6`, { crit: r === 20 }); sneakUsed = true; sneak = true; }
+      if (h.sneak && !h.sneakUsed && (w.finesse || w.ranged)) { dmg += roll(`${h.sneak}d6`, { crit: r === 20 }); h.sneakUsed = true; sneak = true; }
+      if (h.raging && range === 1) dmg += h.abilities.rage;
       for (const it of h.items) if (/^\+(\d) /.test(it) || /weapon, \+(\d)/i.test(it)) dmg += Number((it.match(/\+(\d)/) || [0, 0])[1]);
       lines.push(`${r === 20 ? 'crits' : 'hits'} ${m.name} for ${dmg}${sneak ? ' (sneak attack)' : ''}`);
       this.damageMonster(m, dmg);
       hit.push(m);
     }
-    this.say(`⚔️ ${h.name} (${w.name}) ${lines.join(', ')}.${this.deathsText(hit)}`);
+    this.say(`⚔️ ${h.name} (${w.name}) ${lines.join(', ') || 'has no one in reach'}.${this.deathsText(hit)}${h.attacksLeft > 0 ? ` (${h.attacksLeft} more attack${h.attacksLeft > 1 ? 's' : ''} this turn)` : ''}`);
   }
   damageMonster(m, dmg) { m.hp = Math.max(0, m.hp - dmg); }
   deathsText(list) {
@@ -576,7 +691,8 @@ export class Run extends EventEmitter {
         const ok = r === 20 || (r !== 1 && r + best.b >= h.ac);
         if (!ok) { lines.push(`misses ${h.name}`); continue; }
         const crit = r === 20 || (h.down && range === 1);
-        const dmg = best.d.reduce((n, x) => n + roll(x, { crit }), 0);
+        let dmg = best.d.reduce((n, x) => n + roll(x, { crit }), 0);
+        if (h.raging) dmg = Math.floor(dmg / 2);
         lines.push(`${crit ? 'crits' : 'hits'} ${h.name} for ${dmg}`);
         this.hurt(h, dmg, { quiet: true, crit });
       } else {
@@ -599,14 +715,53 @@ export class Run extends EventEmitter {
 
   // What a character does when nobody's playing them: heal a friend in trouble, blast groups, shoot from afar if they
   // can, else walk up and hit the closest foe.
+  // Spends an action the way a player would (checking it's allowed and paying for it). Returns true if done.
+  tryAct(h, act) {
+    if (this.state !== 'combat' || h.down || h.dead || !this.foes().length) return false;
+    if (this.canDo(h, act)) return false;
+    const cost = this.costOf(h, act);
+    if (cost === 'action') h.res.action--;
+    if (cost === 'bonus') h.res.bonus--;
+    this.doAction(h, act);
+    return true;
+  }
+  // A whole turn for a character nobody's playing: bonus actions that help, the main action, follow-ups,
+  // and Action Surge for a second main action.
   heroAI(h) {
+    h.res = h.res || { action: 1, bonus: 1 };
+    const live = () => this.state === 'combat' && this.foes().length && !h.down && !h.dead;
+    if (h.abilities?.rage && !h.raging && h.uses.rage) this.tryAct(h, { type: 'rage' });
+    if (h.abilities?.secondWind && h.uses.secondWind && h.hp < h.maxHp / 2) this.tryAct(h, { type: 'secondWind' });
+    const down = this.heroes.find((x) => x.down && !x.dead);
+    const bonusHeal = castable(h).find((x) => x.data.heal && isBonusSpell(x));
+    if (down && bonusHeal && h.res.bonus) this.tryAct(h, { type: 'cast', spell: bonusHeal.name, target: down.id });
+    if (h.hp / h.maxHp < 0.3 && h.potions && h.res.bonus) this.tryAct(h, { type: 'potion' });
+    for (let n = 0; n < 3 && live(); n++) {
+      if (h.res.action > 0) this.mainAction(h);
+      else if (h.attacksLeft > 0) { const t = nearest(h, this.foes()); this.tryAct(h, { type: 'attack', weapon: (h.lastWeapon || h.attacks[0]).name, target: t.id }); }
+      if (!live()) break;
+      if (h.res.action <= 0 && h.attacksLeft <= 0 && h.abilities?.actionSurge && h.uses.actionSurge && this.foes().length >= 2) { this.tryAct(h, { type: 'actionSurge' }); continue; }
+      break;
+    }
+    if (live() && h.res.bonus > 0 && h.attackedThisTurn) {
+      const t = this.foes().filter((m) => dist(h, m) <= 1).sort((a, b2) => a.hp - b2.hp)[0];
+      if (t && h.abilities?.offhand) this.tryAct(h, { type: 'offhand', target: t.id });
+      else if (t && h.abilities?.martialArts) this.tryAct(h, { type: 'martial', target: t.id });
+    }
+    if (live() && h.res.bonus > 0) {
+      const bs = castable(h).find((x) => !x.data.heal && isBonusSpell(x));
+      if (bs) this.tryAct(h, { type: 'cast', spell: bs.name, target: nearest(h, this.foes()).id });
+    }
+  }
+  // The character's main Action when the game plays them.
+  mainAction(h) {
     const foes = this.foes();
     const hurt = this.standing().filter((x) => x.down || x.hp / x.maxHp < 0.3).sort((a, b) => a.hp - b.hp)[0];
     const can = castable(h);
     const healSpell = can.filter((s) => s.data.heal).sort((a, b) => spellRange(b) - spellRange(a))[0];
-    if (hurt && healSpell && (spellRange(healSpell) > 1 || dist(h, hurt) <= (h.steps ?? h.speed) + 1)) return this.doAction(h, { type: 'cast', spell: healSpell.name, target: hurt.id });
-    if (hurt && hurt.down && hurt !== h && h.potions && dist(h, hurt) <= (h.steps ?? h.speed) + 1) return this.doAction(h, { type: 'potion', target: hurt.id });
-    if (h.hp / h.maxHp < 0.3 && h.potions) return this.doAction(h, { type: 'potion' });
+    if (hurt && healSpell && (spellRange(healSpell) > 1 || dist(h, hurt) <= (h.steps ?? h.speed) + 1)) return this.tryAct(h, { type: 'cast', spell: healSpell.name, target: hurt.id });
+    if (hurt && hurt.down && hurt !== h && h.potions && dist(h, hurt) <= (h.steps ?? h.speed) + 1) return this.tryAct(h, { type: 'potion', target: hurt.id });
+    if (h.hp / h.maxHp < 0.3 && h.potions) return this.tryAct(h, { type: 'potion' });
     const near = nearest(h, foes);
     const dmgSpells = can.filter((s) => !s.data.heal);
     const aoe = dmgSpells.filter((s) => s.data.aoe && s.level > 0)
@@ -619,7 +774,7 @@ export class Run extends EventEmitter {
     if (aoe) {
       const pool = SELF_AREA.test(aoe.s.name) ? foes : aoe.safe;
       const center = [...pool].sort((a, b) => foes.filter((f) => dist(b, f) <= 2).length - foes.filter((f) => dist(a, f) <= 2).length)[0];
-      return this.doAction(h, { type: 'cast', spell: aoe.s.name, target: center.id });
+      return this.tryAct(h, { type: 'cast', spell: aoe.s.name, target: center.id });
     }
     const castBetter = h.castMod >= Math.max(h.m.str, h.m.dex);
     if (castBetter && dmgSpells.length) {
@@ -627,7 +782,7 @@ export class Run extends EventEmitter {
       const cantrips = dmgSpells.filter((s) => s.level === 0 && spellRange(s) > 1);
       const choice = leveled.length && Math.random() < 0.5 ? leveled.sort((a, b) => b.level - a.level)[0] : cantrips[0] || dmgSpells[0];
       const target = [...foes].filter((f) => dist(h, f) <= spellRange(choice)).sort((a, b) => a.hp - b.hp)[0] || near;
-      return this.doAction(h, { type: 'cast', spell: choice.name, target: target.id });
+      return this.tryAct(h, { type: 'cast', spell: choice.name, target: target.id });
     }
     const adjacent = this.enemiesNext(h);
     const melee = h.attacks.filter((a) => weaponRange(a) === 1).sort((a, b) => avg(b.dice) + b.bonus - avg(a.dice) - a.bonus)[0];
@@ -635,7 +790,7 @@ export class Run extends EventEmitter {
     const w = adjacent.length ? (melee || ranged) : ranged && (h.m.dex > h.m.str || !melee) ? ranged : melee || ranged;
     const pickT = adjacent.length && weaponRange(w) === 1 ? [...adjacent].sort((a, b) => a.hp - b.hp)[0]
       : [...foes].filter((f) => dist(h, f) <= weaponRange(w)).sort((a, b) => a.hp - b.hp)[0] || near;
-    this.doAction(h, { type: 'attack', weapon: w.name, target: pickT.id });
+    this.tryAct(h, { type: 'attack', weapon: w.name, target: pickT.id });
   }
   // Someone else (GM, or a timeout) plays this turn the way the AI would.
   autoTurn() {

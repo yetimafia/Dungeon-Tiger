@@ -81,10 +81,15 @@ get a random adventurer, walk the dungeon and fight on the battle map by tapping
 - **Players' password (optional, in ⚙️ Settings):** lets people log in at the site's address without the join link.
 - The site runs on your PC, so it's online only while Dungeon Tiger is open, and its address changes each time it goes online.
 - On the site: open a lobby (level, seats, rules), friends join, the one who opened it presses Start. Pick a class or get a surprise.
-- **Your turn:** the squares you can reach light up blue. Tap one to move, tap a monster to target it, then pick an
-  action. You can move, act, and move again, then press **End turn**. Actions: weapon attacks, spells, Dash (double
-  move), Disengage (move away safely), Dodge, and Potion. Area spells like Fireball are aimed at a square: tap a square
-  to see the blast, tap it again to cast. Friends in the blast get hit too.
+- **Your turn works like Baldur's Gate 3:** each turn you get one 🟢 **Action**, one 🔶 **Bonus Action**, and your
+  **movement** (the blue squares). Every button shows what it costs. Use them in any order, then press **End turn**.
+  - 🟢 Actions: attack, most spells, Dash, Disengage, Dodge, Help (get a fallen friend back up).
+    With Extra Attack, the Attack action gives two or more swings: each tap is one swing, so you can move or switch targets in between.
+  - 🔶 Bonus Actions: drink a potion, Healing Word and other bonus-action spells, Shove (push a monster 10 ft),
+    an off-hand attack with two light weapons, a monk's Martial Arts strike, a barbarian's Rage, a fighter's Second Wind,
+    and a rogue's Cunning Action (Dash or Disengage as a bonus action).
+  - ⚪ Free: a fighter's **Action Surge** adds another Action to the turn.
+  - Area spells like Fireball are aimed at a square: tap a square to see the blast, tap it again to cast. Friends in the blast get hit too.
 - **Leaving a monster's reach** without Disengaging gives it a free swing (an opportunity attack). The same goes for monsters running from you.
 - If you don't play your turn in time (⚙️ Settings → Seconds to choose an action), the game plays it for you.
 

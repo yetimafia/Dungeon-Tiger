@@ -1,7 +1,9 @@
-**Dungeon Tiger 1.1.0: play from the players' website**
-- 🌐 **Players' website:** your friends play from their phone or computer. They open a lobby, join, get a random adventurer, explore and fight on the battle map by tapping.
-- 🔒 **Behind a password:** press **Go online** and a free Cloudflare tunnel puts the site online. If Note Tiger's player website is set up, a **Join the dungeon** button appears there, behind the same group password. Otherwise, share the join link. You can also set a players' password in Settings.
-- ⚔️ **Fuller turns:** move, act, then move again, and press End turn. New actions: **Dash** and **Disengage**. Leaving a monster's reach gives it an **opportunity attack**, and monsters running from you get hit too. Aim **area spells** at a square, and watch out for friends in the blast. Discord has a Dash button now too.
-- The GM page gets the same turn controls, plus a Players' website box with the join link.
+**Dungeon Tiger 1.2.0: Baldur's Gate 3 style turns**
+- 🟢🔶 **Action, Bonus Action and movement:** every turn gives one Action, one Bonus Action, and your movement. Use them in any order, then press **End turn**. Every button shows what it costs.
+- ⚔️ **Extra Attack:** with Extra Attack, each tap is one swing, so you can move or switch targets between swings.
+- 🔶 **Bonus actions:** potions, Healing Word and other bonus-action spells, Shove, off-hand attacks with two light weapons, Martial Arts, Rage, Second Wind, and Cunning Action (rogues Dash or Disengage as a bonus action).
+- ⚡ **Action Surge** adds a whole extra Action to the turn. New action: **Help** gets a fallen friend back up.
+- Works on the players' website, the GM page and in Discord. Discord now has an **End turn** button, and the action list shows 🟢 or 🔶 for each choice.
+- Companions the game plays use their bonus actions too. Fights are a little tougher to make up for it.
 
-Your settings are kept when you update. Note Tiger 2.15.0 or newer is needed for the Join button on its website.
+Your settings are kept when you update.
