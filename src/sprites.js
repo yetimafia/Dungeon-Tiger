@@ -62,6 +62,11 @@ class Grid {
       if (t <= 1 && this.k === 1) this.dot(x, y, m); else this.ell(x, y, Math.max(t, 0.25) / 2, Math.max(t, 0.25) / 2, m);
     }
   }
+  // A limb: a stroke that goes from thickness t0 to t1 (rounded ends).
+  taper(x0, y0, x1, y1, t0, t1, m) {
+    const n = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0)) * this.s * 2 * this.k + 1;
+    for (let i = 0; i <= n; i++) { const f = i / n, t = t0 + (t1 - t0) * f; this.ell(x0 + (x1 - x0) * f, y0 + (y1 - y0) * f, t / 2, t / 2, m); }
+  }
   tri(x0, y0, x1, y1, x2, y2, m) { // filled triangle
     const P = [[x0, y0], [x1, y1], [x2, y2]].map(([x, y]) => [this.X(x), this.Y(y)]);
     const minX = Math.floor(Math.min(...P.map((p) => p[0]))), maxX = Math.ceil(Math.max(...P.map((p) => p[0])));
@@ -156,15 +161,31 @@ function humanoid(g, r, n, o = {}) {
   const armored = /knight|guard|soldier|veteran|warrior|gladiator|champion|infantry|captain|hobgoblin|duergar|hill giant|sergeant|commander|paladin|devil/.test(n);
   const archer = /scout|archer|bandit|ranger|hunter|bowman/.test(n);
   // legs, then body, arms, head
-  if (!o.noLegs) { g.rect(11 - bulk, 22, 4, 8, 'second'); g.rect(17 + bulk, 22, 4, 8, 'second'); g.rect(10 - bulk, 28, 5, 2, 'dark'); g.rect(17 + bulk, 28, 5, 2, 'dark'); }
+  const big = g.k > 1;
+  if (!o.noLegs) {
+    if (big) { // tapered legs and rounded boots
+      g.taper(13 - bulk, 21, 12.8 - bulk, 27.5, 4.2, 3.2, 'second'); g.taper(19 + bulk, 21, 19.2 + bulk, 27.5, 4.2, 3.2, 'second');
+      g.ell(12.4 - bulk, 28.6, 2.7, 1.5, 'dark'); g.ell(19.6 + bulk, 28.6, 2.7, 1.5, 'dark');
+    } else { g.rect(11 - bulk, 22, 4, 8, 'second'); g.rect(17 + bulk, 22, 4, 8, 'second'); g.rect(10 - bulk, 28, 5, 2, 'dark'); g.rect(17 + bulk, 28, 5, 2, 'dark'); }
+  }
   if (caster) { g.tri(16, 11, 7 - bulk, 30, 25 + bulk, 30, 'second'); }
-  g.rect(10 - bulk, 12, 12 + bulk * 2, 11, caster ? 'second' : armored ? 'metal' : 'second');
-  g.rect(10 - bulk, 20, 12 + bulk * 2, 2, 'dark'); // belt
-  g.rect(7 - bulk, 13, 3, 9, armored ? 'metal' : 'body'); g.rect(22 + bulk, 13, 3, 9, armored ? 'metal' : 'body');
-  g.ell(8.5 - bulk, 22.5, 1.6, 1.6, 'body'); g.ell(23.5 + bulk, 22.5, 1.6, 1.6, 'body');
+  const torso = caster ? 'second' : armored ? 'metal' : 'second';
+  if (big) { // shoulders wider than the waist
+    g.ell(16, 14.2, 6.6 + bulk, 3.2, torso); g.taper(16, 14.5, 16, 20.5, 11 + bulk * 2, 9.4 + bulk * 2, torso);
+    g.rect(11.2 - bulk, 19.8, 9.6 + bulk * 2, 1.8, 'dark'); // belt
+    const sleeve = armored ? 'metal' : 'body';
+    g.taper(9.4 - bulk, 13.8, 8.4 - bulk, 21.2, 3.4, 2.6, sleeve); g.taper(22.6 + bulk, 13.8, 23.6 + bulk, 21.2, 3.4, 2.6, sleeve);
+    g.ell(8.3 - bulk, 22.4, 1.7, 1.7, 'body'); g.ell(23.7 + bulk, 22.4, 1.7, 1.7, 'body');
+  } else {
+    g.rect(10 - bulk, 12, 12 + bulk * 2, 11, torso);
+    g.rect(10 - bulk, 20, 12 + bulk * 2, 2, 'dark'); // belt
+    g.rect(7 - bulk, 13, 3, 9, armored ? 'metal' : 'body'); g.rect(22 + bulk, 13, 3, 9, armored ? 'metal' : 'body');
+    g.ell(8.5 - bulk, 22.5, 1.6, 1.6, 'body'); g.ell(23.5 + bulk, 22.5, 1.6, 1.6, 'body');
+  }
   const hy = 7.5;
-  if (caster && !/lich/.test(n)) g.ell(16, hy - 0.5, 5.5, 5.5, 'second'); // hood
-  g.ell(16, hy, 4.5 + bulk * 0.4, 4.5, 'body');
+  if (big) g.ell(16, hy + 4.2, 1.8, 1.4, 'body'); // neck
+  if (caster && !/lich/.test(n)) g.ell(16, hy - 0.5, big ? 6 : 5.5, big ? 6 : 5.5, 'second'); // hood
+  g.ell(16, hy, (big ? 5 : 4.5) + bulk * 0.4, big ? 4.9 : 4.5, 'body');
   if (/goblin|kobold|elf|drow|hobgoblin|gnome|pixie|sprite|imp|satyr/.test(n)) { g.tri(11, hy - 1, 7, hy - 4, 12, hy + 1, 'body'); g.tri(21, hy - 1, 25, hy - 4, 20, hy + 1, 'body'); }
   if (/orc|boar|ogre|troll/.test(n)) { g.dot(14, hy + 3, 'accent'); g.dot(18, hy + 3, 'accent'); }
   if (/minotaur|devil|demon|horned|satyr|tiefling|fiend|balor|ram|goat|bull|cambion|imp\b/.test(n) || o.horns) {
@@ -225,8 +246,14 @@ function quad(g, r, n, o = {}) {
   const by = 28 - legH - (bulky ? 5 : 4);
   const brx = bulky ? 10 : 8.5, bry = bulky ? 6 : 4.5;
   // legs (far pair darker), body, tail, head
-  for (const [x, far] of [[9, 1], [20, 1], [11, 0], [22, 0]]) g.rect(x, by + 2, bulky ? 3.5 : 2.5, legH + 2, far ? 'dark' : 'body');
-  for (const x of [11, 22]) g.rect(x - 0.5, 28, bulky ? 4.5 : 3.5, 2, 'accent');
+  if (g.k > 1) {
+    const t0 = bulky ? 4.6 : 3.4, t1 = bulky ? 3.2 : 2.2;
+    for (const [x, far] of [[10, 1], [21, 1], [12, 0], [23, 0]]) { g.taper(x + 0.2, by + 1.5, x + (far ? -0.3 : 0.3), 28.2, t0, t1, far ? 'wing' : 'body'); }
+    for (const x of [12, 23]) g.ell(x + 0.6, 28.8, bulky ? 2.5 : 1.9, 1.2, 'accent');
+  } else {
+    for (const [x, far] of [[9, 1], [20, 1], [11, 0], [22, 0]]) g.rect(x, by + 2, bulky ? 3.5 : 2.5, legH + 2, far ? 'dark' : 'body');
+    for (const x of [11, 22]) g.rect(x - 0.5, 28, bulky ? 4.5 : 3.5, 2, 'accent');
+  }
   g.ell(15, by, brx, bry, 'body');
   g.ell(15, by + bry * 0.55, brx * 0.7, bry * 0.4, 'second');
   if (!bulky || cat) g.line(6, by - 1, 2, by - 6 + (cat ? -2 : 3), 'body', cat ? 1.6 : 2);
@@ -238,7 +265,7 @@ function quad(g, r, n, o = {}) {
   g.dot(hx + 1, hy - 1, 'eye');
   if (g.k > 1) {
     g.line(hx + 2, hy + 2.6, hx + 5, hy + 2.2, 'dark', 0.5);                                        // mouth
-    for (const x of [11, 22]) for (let c = 0; c < 3; c++) g.tri(x + c * 1.1, 29.4, x + c * 1.1 + 0.8, 29.4, x + c * 1.1 + 0.6, 30.6, 'accent'); // claws
+    for (const x of [11.2, 22.2]) for (let c = 0; c < 3; c++) g.tri(x + c * 1, 29.5, x + c * 1 + 0.7, 29.5, x + c * 1 + 0.5, 30.4, 'accent'); // claws
     if (/owlbear/.test(n)) { g.tri(hx + 3, hy, hx + 3, hy + 2.4, hx + 6.5, hy + 1.6, 'accent'); g.ell(hx - 1, hy + 1, 4.5, 3.5, 'second'); g.ell(hx + 1, hy - 1, 1.2, 1.2, 'eye'); }
   }
   g.tri(hx - 2, hy - 2, hx - 1, hy - 6, hx + 1, hy - 3, 'body'); // ear
@@ -455,7 +482,8 @@ const PLANS = { humanoid, zombie, skeleton, ghost, quad, low, bird, bug, snake, 
 
 // ---------- painting at 256×256 ----------
 // Five tones per colour, darkest to lightest, and a 4×4 Bayer pattern to dither between them (classic pixel-art look).
-const ramp5 = (h) => { const c = hex(h); return [mix(c, [16, 8, 26], 0.62), mix(c, [20, 12, 30], 0.34), c, mix(c, [255, 248, 230], 0.22), mix(c, [255, 252, 240], 0.46)]; };
+// Shadows lean cool (toward blue-violet) and lights lean warm (toward gold), the way pixel artists shift hues.
+const ramp5 = (h) => { const c = hex(h); return [mix(c, [34, 20, 74], 0.62), mix(c, [52, 40, 96], 0.33), c, mix(c, [255, 236, 170], 0.26), mix(c, [255, 250, 220], 0.52)]; };
 const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5].map((v) => (v + 0.5) / 16);
 const TEXTURE = { quad: 'fur', bird: 'feather', dragon: 'scale', snake: 'scale', low: 'scale', construct: 'stone', giant: 'skin', humanoid: 'skin', zombie: 'skin', fiend: 'skin', angel: 'skin', elemental: 'swirl', plant: 'bark', bug: 'shell', skeleton: 'bone', ooze: 'goo', ghost: 'goo', eye: 'skin', swarm: 'fur' };
 
@@ -507,7 +535,38 @@ export function drawMonster(m, { words, seed, res = SPRITE } = {}) {
     const cap = 2.6 * K;
     for (let i = 0; i < R * R; i++) if (mask[i]) { const t = Math.min(d[i], cap) / cap; height[i] = Math.sqrt(1 - (1 - t) ** 2); }
   }
+  // Smooth the height a little, so stair-stepped edges don't turn into stripes of shading.
+  {
+    const rad = Math.max(1, Math.round(K * 0.45)), tmp = new Float32Array(R * R);
+    for (let pass = 0; pass < 2; pass++) {
+      for (let y = 0; y < R; y++) for (let x = 0; x < R; x++) {
+        const i = y * R + x; if (!P[i]) { tmp[i] = 0; continue; }
+        let sum = 0, n2 = 0;
+        for (let d = -rad; d <= rad; d++) { const xx = x + d; if (xx >= 0 && xx < R && P[i + d] === P[i]) { sum += height[i + d]; n2++; } }
+        tmp[i] = sum / n2;
+      }
+      for (let y = 0; y < R; y++) for (let x = 0; x < R; x++) {
+        const i = y * R + x; if (!P[i]) continue;
+        let sum = 0, n2 = 0;
+        for (let d = -rad; d <= rad; d++) { const yy = y + d; if (yy >= 0 && yy < R && P[i + d * R] === P[i]) { sum += tmp[i + d * R]; n2++; } }
+        height[i] = sum / n2;
+      }
+    }
+  }
   const L = [-0.55, -0.72, 0.65]; // light from the top left, a little in front
+  // Contact shadows: a part is a little darker right where another part sits on top of it.
+  const contact = new Float32Array(R * R);
+  {
+    const reach = 1.4 * K;
+    for (let y = 0; y < R; y++) for (let x = 0; x < R; x++) {
+      const i = y * R + x, v = P[i];
+      if (!v || v === M.eye || v === M.dark || v === M.glow) continue;
+      for (let d = 1; d <= reach; d++) {
+        const o = g.at(x, y - d);  // something different just above: it overlaps / casts down
+        if (o && o !== v && o !== M.eye && o !== M.dark && o > v) { contact[i] = 0.9 * (1 - d / reach); break; }
+      }
+    }
+  }
   const outline = mix(hex(pal.body), [10, 5, 16], 0.86);
   const reachSeam = Math.max(1, Math.round(K / 4));
   const seam = (x, y, v) => { // a pixel next to a different part: draw the line between them
@@ -516,10 +575,10 @@ export function drawMonster(m, { words, seed, res = SPRITE } = {}) {
   };
   const surface = (x, y, v, t) => { // fur, scales, stone… a nudge up or down in tone
     const k = K;
-    if (v === M.metal) return ((x + y * 2) % Math.round(10 * k / 2) < k / 2 ? 1 : 0);
+    if (v === M.metal) return 0;
     if (v === M.second) return (Math.sin(x / (1.6 * k) + Math.sin(y / (4 * k)) * 1.5) > 0.96 ? -0.6 : 0); // cloth folds
     if (v !== M.body && v !== M.wing) return 0;
-    if (t === 'fur') { const s = (x * 3 + y * 5 + Math.floor(jitter[((x >> 2) + (y >> 3) * 7) & 63] * 40)) % Math.round(14 * k / 4); return s < 2 ? -1 : 0; }
+    if (t === 'fur') { const s = (x * 2 + y * 5 + Math.floor(jitter[((x >> 3) + (y >> 3) * 7) & 63] * 60)) % Math.round(22 * k / 4); return s < 2 ? -0.7 : 0; }
     if (t === 'feather') { const cy = y % (3 * k), cx = (x + (Math.floor(y / (3 * k)) % 2) * 1.5 * k) % (3 * k); return cy > 2.4 * k || Math.abs(cx - 1.5 * k) > 1.35 * k ? -1 : 0; }
     if (t === 'scale') { const row = Math.floor(y / (1.6 * k)), cx = (x + (row % 2) * 1.2 * k) % (2.4 * k) - 1.2 * k, cy = y % (1.6 * k); return Math.hypot(cx, cy * 1.4) > 1.15 * k && cy < 0.9 * k ? -1 : 0; }
     if (t === 'stone') { const c = jitter[((x / (3 * k)) | 0) * 7 + ((y / (2 * k)) | 0) * 13 & 63]; return (x % (3 * k) < 1 || y % (2 * k) < 1) && c > 0.3 ? -1 : 0; }
@@ -544,12 +603,18 @@ export function drawMonster(m, { words, seed, res = SPRITE } = {}) {
       const len = Math.hypot(nx, ny, nz);
       const lum = (nx * L[0] + ny * L[1] + nz * L[2]) / len;             // how much it faces the light
       // the lower part of the sprite sits a little more in shadow; textures nudge the tone
-      let t = 2 + (lum - 0.62) * 4.2 + (0.5 - y / R) * 0.5 + surface(x, y, v, tex) * 0.75;
+      let t = 2.1 + (lum - 0.62) * 4.4 + surface(x, y, v, tex) * 0.6 - (contact[i] || 0);
       t = Math.max(0, Math.min(4, t));
+      // Clean bands of tone, dithered only right at the border between two bands.
       const base = Math.floor(t), frac = t - base;
-      let tone = frac > BAYER[(y & 3) * 4 + (x & 3)] ? base + 1 : base;
+      const edge = Math.max(0, Math.min(1, (frac - 0.38) / 0.24));
+      let tone = edge > BAYER[(y & 3) * 4 + (x & 3)] ? base + 1 : base;
       if (seam(x, y, v)) tone = Math.min(tone, 1);
+      // Rim light: a thin cool edge on the side away from the main light.
+      const rim = nx > 0.35 && height[i] < 0.22 && tone <= 1;
+      if (v === M.metal && lum > 0.9) tone = 4; // a shine on metal
       c = rp[Math.max(0, Math.min(4, tone))];
+      if (rim) c = mix(c, [150, 190, 255], 0.28);
     }
     out.set([c[0], c[1], c[2], 255], i * 4);
   }
@@ -584,9 +649,24 @@ export function drawMonster(m, { words, seed, res = SPRITE } = {}) {
   const od = distanceIn(solid, R, false);   // distance from empty pixels to the creature
   const thick = Math.max(1, Math.round(K * 0.42));
   const gc = hex(pal.glow);
+  // Ground shadow under the feet.
+  let lowest = 0; for (let i = R * R - 1; i >= 0; i--) if (P[i]) { lowest = (i / R) | 0; break; }
+  let minX = R, maxX = 0; for (let y = Math.max(0, lowest - 2 * K); y <= lowest; y++) for (let x = 0; x < R; x++) if (P[y * R + x]) { minX = Math.min(minX, x); maxX = Math.max(maxX, x); }
+  const shX = (minX + maxX) / 2, shW = Math.max(3 * K, (maxX - minX) / 2 + K), shY = Math.min(R - 2, lowest + 0.2 * K), shH = 0.9 * K;
   for (let i = 0; i < R * R; i++) {
     if (P[i]) continue;
-    if (od[i] <= thick + 0.01) { out.set([outline[0], outline[1], outline[2], 255], i * 4); continue; }
+    if (od[i] <= thick + 0.01) {
+      // Outline in a very dark version of the colour it borders (softer than plain black).
+      const x = i % R, y = (i / R) | 0;
+      let nb = 0;
+      for (let d = 1; d <= thick + 1 && !nb; d++) for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]]) { const o = g.at(x + dx * d, y + dy * d); if (o) { nb = o; break; } }
+      const oc = nb && nb !== M.dark ? mix(ramps[nb][0], [8, 4, 14], 0.55) : outline;
+      out.set([oc[0], oc[1], oc[2], 255], i * 4);
+      continue;
+    }
+    const x = i % R, y = (i / R) | 0;
+    const e = ((x - shX) / shW) ** 2 + ((y - shY) / shH) ** 2;
+    if (e < 1) { out.set([10, 6, 14, Math.round(70 * (1 - e))], i * 4); continue; }
     if (gd && gd[i] < 3 * K) {
       const a = Math.round(150 * (1 - gd[i] / (3 * K)) ** 2);
       if (a > 6 && BAYER[(((i / R) | 0) & 3) * 4 + ((i % R) & 3)] < a / 150 + 0.15) out.set([gc[0], gc[1], gc[2], a], i * 4);
@@ -652,7 +732,7 @@ export function drawHero(h, opts = {}) {
 }
 
 // Painting a 256×256 sprite takes a moment, so finished ones are kept in memory and on disk (cache\sprites).
-const VERSION = 'v2';
+const VERSION = 'v3';
 const CACHE_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'cache', `sprites-${VERSION}`);
 const cache = new Map();
 function cached(key, paint) {
