@@ -39,14 +39,16 @@ class Grid {
   ell(cx, cy, rx, ry, m) {
     const k = this.k, X = this.X(cx), Y = this.Y(cy), RX = Math.max(0.6, rx * this.s * k), RY = Math.max(0.6, ry * this.s * k);
     const pad = k === 1 ? 0.3 : 0.5;
+    // At sprite size, bigger shapes are "squircles" (power 3) so things look chunkier and less round.
+    const pw = k > 1 && Math.min(rx, ry) * this.s > 1.2 ? 3 : 2;
     for (let y = Math.floor(Y - RY); y <= Math.ceil(Y + RY); y++) for (let x = Math.floor(X - RX); x <= Math.ceil(X + RX); x++) {
-      if (((x - X) / (RX + pad)) ** 2 + ((y - Y) / (RY + pad)) ** 2 <= 1) this.raw(x, y, m);
+      if (Math.abs((x - X) / (RX + pad)) ** pw + Math.abs((y - Y) / (RY + pad)) ** pw <= 1) this.raw(x, y, m);
     }
   }
   rect(x, y, w, h, m) {
     const k = this.k, X = this.X(x), Y = this.Y(y), W = Math.max(1, Math.round(w * this.s * k)), H = Math.max(1, Math.round(h * this.s * k));
     // At sprite size, corners are rounded so limbs and bodies look soft instead of boxy.
-    const rr = k > 1 ? Math.min(W, H) * 0.42 : 0;
+    const rr = k > 1 ? Math.min(W, H) * 0.14 : 0;
     for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) {
       if (rr) {
         const cx = i < rr ? rr : i > W - 1 - rr ? W - 1 - rr : i, cy = j < rr ? rr : j > H - 1 - rr ? H - 1 - rr : j;
@@ -532,12 +534,12 @@ export function drawMonster(m, { words, seed, res = SPRITE } = {}) {
     // Eyes, mouths and other small marks don't count as edges (they sit on the surface).
     for (let i = 0; i < R * R; i++) if (P[i] === v || P[i] === M.eye || P[i] === M.dark) mask[i] = 1;
     const d = distanceIn(mask, R);
-    const cap = 2.6 * K;
-    for (let i = 0; i < R * R; i++) if (mask[i]) { const t = Math.min(d[i], cap) / cap; height[i] = Math.sqrt(1 - (1 - t) ** 2); }
+    const cap = 1.15 * K;
+    for (let i = 0; i < R * R; i++) if (mask[i]) { const t = Math.min(d[i], cap) / cap; height[i] = t; }
   }
   // Smooth the height a little, so stair-stepped edges don't turn into stripes of shading.
   {
-    const rad = Math.max(1, Math.round(K * 0.45)), tmp = new Float32Array(R * R);
+    const rad = Math.max(1, Math.round(K * 0.2)), tmp = new Float32Array(R * R);
     for (let pass = 0; pass < 2; pass++) {
       for (let y = 0; y < R; y++) for (let x = 0; x < R; x++) {
         const i = y * R + x; if (!P[i]) { tmp[i] = 0; continue; }
@@ -732,7 +734,7 @@ export function drawHero(h, opts = {}) {
 }
 
 // Painting a 256×256 sprite takes a moment, so finished ones are kept in memory and on disk (cache\sprites).
-const VERSION = 'v3';
+const VERSION = 'v4';
 const CACHE_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'cache', `sprites-${VERSION}`);
 const cache = new Map();
 function cached(key, paint) {
