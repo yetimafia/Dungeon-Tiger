@@ -64,7 +64,7 @@ export class Delve {
     if (this.nt.ok && run.events.length > 3) {
       try {
         const sent = await this.nt.sendRun({
-          title: run.title, outcome: run.outcome, floors: run.floorN, source: 'Dungeon Delve',
+          title: run.title, outcome: run.outcome, floors: run.floorN, source: 'Dungeon Tiger',
           party: run.heroes.map((h) => `${h.name} (${h.cls}${h.playerName ? `, played by ${h.playerName}` : ''})${h.dead ? ' – died' : ''}`),
           events: run.events,
         });

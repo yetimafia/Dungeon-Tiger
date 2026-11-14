@@ -1,4 +1,4 @@
-// Dungeon Delve: starts the GM page and (if a token is set) the Discord bot.
+// Dungeon Tiger: starts the GM page and (if a token is set) the Discord bot.
 import 'dotenv/config';
 import { NoteTiger } from './notetiger.js';
 import { Delve } from './delve.js';

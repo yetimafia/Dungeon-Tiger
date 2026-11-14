@@ -70,7 +70,7 @@ export function castable(hero) {
 export class Run extends EventEmitter {
   constructor({ id, edition = '2024', level = 1, title, heroes, source = 'web', guildId = null, channelId = null, auto = false, defer = false }) {
     super();
-    Object.assign(this, { id, edition, level, title: title || `Delve ${new Date().toLocaleDateString()}`, heroes, source, guildId, channelId });
+    Object.assign(this, { id, edition, level, title: title || `Dungeon run ${new Date().toLocaleDateString()}`, heroes, source, guildId, channelId });
     this.auto = auto;            // everyone plays themselves (test runs)
     this.floorN = 1;
     this.floor = makeFloor({ floor: 1, edition, level, size: heroes.length });
@@ -259,6 +259,7 @@ export class Run extends EventEmitter {
       ...monsters.map((m) => ({ kind: 'm', id: m.id, init: d20() + mod(m.ab[1]) + Math.random() / 10 })),
     ].sort((a, b) => b.init - a.init);
     this.combat = { monsters, order, turn: -1, round: 1 };
+    this.emit('fight', monsters);
     this.say(`🎲 Initiative: ${order.map((o) => (o.kind === 'h' ? this.hero(o.id).name : monsters.find((m) => m.id === o.id).name)).join(' → ')}`, { story: false });
     this.next();
   }
@@ -540,7 +541,7 @@ export class Run extends EventEmitter {
       here: this.here, rooms: Object.values(this.floor.rooms).map((r) => ({ id: r.id, x: r.x, y: r.y, kind: r.seen ? r.kind : '?', seen: r.seen, visited: r.visited,
         cleared: r.cleared, looted: r.looted, rested: r.rested, exits: r.exits, name: r.visited ? r.name : '' })),
       heroes: this.heroes.map(({ id, name, cls, hp, maxHp, ac, down, dead, ds, potions, slots, player, playerName, gold, items }) => ({ id, name, cls, hp, maxHp, ac, down, dead, ds, potions, slots, player, playerName, gold, items })),
-      foes: (this.combat?.monsters || []).map(({ id, name, hp, maxHp, ac, cr }) => ({ id, name, hp, maxHp, ac, cr })),
+      foes: (this.combat?.monsters || []).map(({ id, n, name, hp, maxHp, ac, cr }) => ({ id, n, name, hp, maxHp, ac, cr })),
       turn: this.current() ? { kind: this.current().kind, id: this.current().id, name: this.current().who.name } : null,
       round: this.combat?.round || 0, waiting: this.waiting, log: this.log.slice(-60), outcome: this.outcome, auto: this.auto, gold: this.gold, source: this.source,
     };

@@ -1,4 +1,4 @@
-# 🗝️ Dungeon Delve
+# 🗝️ Dungeon Tiger
 
 A pick-up D&D dungeon crawl. Everyone gets a random adventurer, and the party tries to get down **5 floors** and beat
 the boss at the bottom. Play it in Discord with buttons, or at the table from the GM page in your browser.
@@ -9,7 +9,7 @@ It's a separate program from Note Tiger, but it **works with Note Tiger** when N
 |---|---|
 | Random characters | Each player gets a full random character made by Note Tiger's character builder (tagged `dungeon`). |
 | Party tracker | HP, spell slots, death saves and gold update live in Note Tiger's **Party** tab. |
-| Rules lookups | `/delve ask` answers rules questions from your Note Tiger books. |
+| Rules lookups | `/dungeon ask` answers rules questions from your Note Tiger books. |
 | Recap | When the run ends, Note Tiger writes a recap and posts it in **#recaps**. |
 
 If Note Tiger isn't running, the game still works. It uses simple stand-in characters instead, and skips the tracker and the recap.
@@ -20,13 +20,13 @@ If Note Tiger isn't running, the game still works. It uses simple stand-in chara
 2. In **Note Tiger → Settings → Connections**: turn Connections on and copy the **key**.
 3. Double-click **start.bat**. The first time, it installs what it needs and opens a `.env` file in Notepad:
    - `NOTE_TIGER_KEY`: paste the key from step 2.
-   - `DISCORD_TOKEN`: the Dungeon Delve bot's token (see below). Leave it empty to use only the GM page.
+   - `DISCORD_TOKEN`: the Dungeon Tiger bot's token (see below). Leave it empty to use only the GM page.
    - Save, close Notepad, and double-click **start.bat** again.
 4. The GM page opens at http://localhost:3090.
 
 ### The Discord bot (a second bot, separate from Note Tiger)
 
-1. Go to https://discord.com/developers/applications, then **New Application**, and name it "Dungeon Delve".
+1. Go to https://discord.com/developers/applications, then **New Application**, and name it "Dungeon Tiger".
 2. **Bot** tab: **Reset Token** and copy it into `DISCORD_TOKEN` in `.env`. Keep it secret.
 3. **OAuth2 → URL Generator**: tick `bot` and `applications.commands`. Under Bot Permissions, tick Send Messages,
    Create Public Threads, Send Messages in Threads, Read Message History, and Embed Links. Open the link it makes,
@@ -35,13 +35,13 @@ If Note Tiger isn't running, the game still works. It uses simple stand-in chara
 ## Playing
 
 **In Discord**
-- `/delve start` opens a lobby. Press **Join** and you get a random adventurer (🎲 for a different one). The one who
+- `/dungeon start` opens a lobby. Press **Join** and you get a random adventurer (🎲 for a different one). The one who
   opened the lobby presses **Start**. Empty seats are filled with companions the game plays (`party:` sets how many seats, 3 by default).
 - The run happens in a thread. Pick a door with the arrow buttons, take loot, rest in the safe room (once per floor,
   full heal), and go down the stairs once their guards are beaten.
 - In a fight, you get a message on your turn: pick a target, then an action (weapon or spell), or Dodge, a Potion, or
   🤖 Play it for me. If you don't choose within 2 minutes, the game plays that turn for you.
-- `/delve map` shows the map. `/delve ask` asks a rules question. `/delve end` ends the run.
+- `/dungeon map` shows the map. `/dungeon ask` asks a rules question. `/dungeon end` ends the run.
 
 **On the GM page**
 - Watch any run, including Discord ones: the map with fog, the party's HP and spell slots, the foes, and what's happening.
@@ -52,7 +52,7 @@ If Note Tiger isn't running, the game still works. It uses simple stand-in chara
 
 | Setting | What it does |
 |---|---|
-| `DISCORD_TOKEN` | The Dungeon Delve bot's token. Empty = no Discord, GM page only. |
+| `DISCORD_TOKEN` | The Dungeon Tiger bot's token. Empty = no Discord, GM page only. |
 | `NOTE_TIGER_URL` | Note Tiger's Connections address. Default `http://localhost:3081/v1`. Use the address Note Tiger shows if it's on another PC. |
 | `NOTE_TIGER_KEY` | The key from Note Tiger → Settings → Connections. |
 | `NOTE_TIGER_SERVER` | Which Discord server's characters, books and #recaps to use. Empty = Note Tiger's first server. |
@@ -60,6 +60,16 @@ If Note Tiger isn't running, the game still works. It uses simple stand-in chara
 | `PORT` / `GM_LAN` | The GM page's port (3090). `GM_LAN=true` lets other computers on your network open it. |
 | `TURN_SECONDS` | How long a Discord player has to choose an action (120). |
 | `KEEP_CHARACTERS` | `true` keeps the random characters in Note Tiger after the run. They're removed by default. |
+
+## Monster sprites
+
+Every monster (all 364 from the free D&D rules) has its own 32×32 pixel-art sprite. They're drawn by code from the
+monster's body type and name: dragons get wings and their colour, "frost" and "fire" monsters get icy or fiery colours,
+and so on. The same monster always looks the same.
+
+- In Discord, a picture of the foes is posted when a fight starts. `/dungeon map` during a fight shows who's still standing.
+- On the GM page, the foes appear above the map and in the Foes list (beaten ones turn grey).
+- **http://localhost:3090/sprites** shows all of them. A single sprite is at `/sprite/<Monster Name>.png`; add `?scale=4` for a bigger one.
 
 ## How the dungeon works
 

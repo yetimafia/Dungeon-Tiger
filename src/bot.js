@@ -1,4 +1,4 @@
-// The Discord side: /delve start opens a lobby, people join (each gets a random adventurer), then the run plays out in a
+// The Discord side: /dungeon start opens a lobby, people join (each gets a random adventurer), then the run plays out in a
 // thread with buttons. Characters nobody plays, and anyone who doesn't answer in time, are played by the game.
 import {
   Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle,
@@ -6,6 +6,7 @@ import {
 } from 'discord.js';
 import { castable } from './game.js';
 import { FLOORS } from './dungeon.js';
+import { lineupPng } from './sprites.js';
 
 const EPH = { flags: MessageFlags.Ephemeral };
 const btn = (id, label, style = ButtonStyle.Secondary, disabled = false) => new ButtonBuilder().setCustomId(id).setLabel(label.slice(0, 80)).setStyle(style).setDisabled(disabled);
@@ -14,7 +15,7 @@ const clip = (s, n) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 const bar = (h) => (h.dead ? '💀' : h.down ? `🩸 0/${h.maxHp} (${h.ds.s}✓ ${h.ds.f}✗)` : `❤️ ${h.hp}/${h.maxHp}`);
 const KIND = { fight: '⚔️', stairs: '🪜', boss: '💀', rest: '🛏️', treasure: '💰', trap: '🪤', empty: '🚪', start: '📍' };
 
-const COMMAND = new SlashCommandBuilder().setName('delve').setDescription('Dungeon Delve: a pick-up dungeon run, 5 floors deep')
+const COMMAND = new SlashCommandBuilder().setName('dungeon').setDescription('Dungeon Tiger: a pick-up dungeon run, 5 floors deep')
   .addSubcommand((s) => s.setName('start').setDescription('Open a lobby: people join and get a random adventurer')
     .addIntegerOption((o) => o.setName('level').setDescription('Character level (default 3)').setMinValue(1).setMaxValue(10))
     .addStringOption((o) => o.setName('rules').setDescription('D&D rules (default from settings)').addChoices({ name: '2024', value: '2024' }, { name: '2014', value: '2014' }))
@@ -32,7 +33,7 @@ export function startBot({ token, delve, turnSeconds = 120 }) {
   client.once('clientReady', async () => {
     console.log(`[bot] logged in as ${client.user.tag}`);
     try { await new REST().setToken(token).put(Routes.applicationCommands(client.user.id), { body: [COMMAND.toJSON()] }); }
-    catch (err) { console.error('[bot] couldn\'t register /delve:', err.message); }
+    catch (err) { console.error('[bot] couldn\'t register /dungeon:', err.message); }
   });
 
   // ---------- the lobby ----------
@@ -41,7 +42,7 @@ export function startBot({ token, delve, turnSeconds = 120 }) {
     const lines = lb.players.map((p) => `• ${p.hero ? heroLine(p.hero) : `${p.name}: rolling a character…`}`);
     const fill = Math.max(0, lb.party - lb.players.length);
     return {
-      content: `🗝️ **Dungeon Delve** (level ${lb.level}, ${lb.edition} rules): get the party down ${FLOORS} floors and beat what waits at the bottom.\n`
+      content: `🗝️ **Dungeon Tiger** (level ${lb.level}, ${lb.edition} rules): get the party down ${FLOORS} floors and beat what waits at the bottom.\n`
         + `${lines.length ? lines.join('\n') : '*Nobody yet. Press Join.*'}\n${fill ? `*${fill} companion${fill > 1 ? 's' : ''} played by the game will fill the party.*` : ''}`
         + `${lb.note ? `\n-# ${lb.note}` : ''}`,
       components: lb.closed ? [] : [row(
@@ -70,6 +71,8 @@ export function startBot({ token, delve, turnSeconds = 120 }) {
       panelSoon = true;
       setTimeout(() => queue(async () => { panelSoon = false; await flush(); if (run.state === 'explore') await postPanel(run); }), 800);
     });
+    // Show what they're up against.
+    run.on('fight', (ms) => queue(async () => { await flush(); await channel.send({ files: [{ attachment: lineupPng(ms), name: 'foes.png' }] }); }));
     run.on('turn', (h) => queue(async () => { await flush(); await postTurn(run, h); }));
     run.on('end', () => queue(async () => {
       clearTimeout(out.turnTimer);
@@ -149,7 +152,7 @@ export function startBot({ token, delve, turnSeconds = 120 }) {
   // ---------- slash commands ----------
   client.on('interactionCreate', async (i) => {
     try {
-      if (i.isChatInputCommand() && i.commandName === 'delve') return await onCommand(i);
+      if (i.isChatInputCommand() && i.commandName === 'dungeon') return await onCommand(i);
       if ((i.isButton() || i.isStringSelectMenu()) && i.customId.startsWith('dd|')) return await onPress(i);
     } catch (err) {
       console.error('[bot]', err);
@@ -179,8 +182,11 @@ export function startBot({ token, delve, turnSeconds = 120 }) {
       return i.editReply(clip(`**${q}**\n${answer}${source ? `\n-# ${source.book}, p. ${source.page}` : ''}`, 2000));
     }
     const run = delve.get(byThread.get(i.channelId));
-    if (!run) return i.reply({ content: 'There\'s no run in this thread. Start one with `/delve start`.', ...EPH });
-    if (sub === 'map') return i.reply({ ...panelView(run), components: [] });
+    if (!run) return i.reply({ content: 'There\'s no run in this thread. Start one with `/dungeon start`.', ...EPH });
+    if (sub === 'map') {
+      const extra = run.state === 'combat' ? { files: [{ attachment: lineupPng(run.combat.monsters, { dead: new Set(run.combat.monsters.filter((m) => m.hp <= 0).map((m) => m.id)) }), name: 'foes.png' }] } : {};
+      return i.reply({ ...panelView(run), components: [], ...extra });
+    }
     if (sub === 'end') {
       if (i.user.id !== run.ownerId && !i.memberPermissions?.has('ManageGuild')) return i.reply({ content: 'Only the one who started the run can end it.', ...EPH });
       await i.reply('Ending the run.');
@@ -258,7 +264,7 @@ export function startBot({ token, delve, turnSeconds = 120 }) {
     if (what === 'cancel') {
       lb.closed = true; lobbies.delete(lb.id);
       lb.players.forEach((p) => p.hero && delve.nt.remove(p.hero.id));
-      return i.update({ content: '🗝️ Dungeon Delve: cancelled.', components: [] });
+      return i.update({ content: '🗝️ Dungeon Tiger: cancelled.', components: [] });
     }
     if (what === 'go') {
       if (lb.players.some((p) => !p.hero)) return i.reply({ content: 'Still rolling a character, one moment.', ...EPH });
@@ -267,7 +273,7 @@ export function startBot({ token, delve, turnSeconds = 120 }) {
       const { heroes: comps } = await delve.makeParty({ companions: Math.max(0, lb.party - lb.players.length), level: lb.level, edition: lb.edition });
       const heroes = [...lb.players.map((p) => p.hero), ...comps];
       let channel = i.channel;
-      try { channel = await lb.message.startThread({ name: `Dungeon Delve ${new Date().toLocaleDateString()}`, autoArchiveDuration: 1440 }); }
+      try { channel = await lb.message.startThread({ name: `Dungeon Tiger ${new Date().toLocaleDateString()}`, autoArchiveDuration: 1440 }); }
       catch (err) { console.error('[bot] couldn\'t make a thread, playing in the channel:', err.message); }
       // Wire up before the run's first lines are said.
       const run = delve.start({ heroes, level: lb.level, edition: lb.edition, source: 'discord', guildId: lb.guildId, channelId: channel.id, defer: true });

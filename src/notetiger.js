@@ -27,13 +27,13 @@ export class NoteTiger {
     catch (err) { this.ok = false; this.lastError = err.message; return null; }
   }
   async randomCharacters({ count, level, edition, player, playerId, cls }) {
-    const { characters } = await this.call('POST', '/characters/random', { count, level, edition, player, playerId, class: cls, tag: 'dungeon', source: 'Dungeon Delve' });
+    const { characters } = await this.call('POST', '/characters/random', { count, level, edition, player, playerId, class: cls, tag: 'dungeon', source: 'Dungeon Tiger' });
     return characters;
   }
   // Fire-and-forget updates for the Party tab.
   track(id, change) {
     if (!this.ok || !id || String(id).startsWith('local-')) return;
-    this.call('POST', `/characters/${encodeURIComponent(id)}/track`, { ...change, source: 'Dungeon Delve' }).catch(() => {});
+    this.call('POST', `/characters/${encodeURIComponent(id)}/track`, { ...change, source: 'Dungeon Tiger' }).catch(() => {});
   }
   remove(id) {
     if (!this.ok || !id || String(id).startsWith('local-')) return;

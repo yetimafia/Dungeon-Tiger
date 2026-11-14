@@ -3,6 +3,8 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { MONSTERS } from './dungeon.js';
+import { spritePng, bodyPlan } from './sprites.js';
 
 const PAGE = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public', 'index.html');
 
@@ -31,6 +33,22 @@ export function startWeb({ delve, port = 3090, lan = false, settings = {} }) {
       if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/index.html')) {
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
         return res.end(fs.readFileSync(PAGE));
+      }
+      // Monster sprites: /sprite/<name>.png?scale=4, and a gallery of them all at /sprites
+      if (p[0] === 'sprite' && p[1]) {
+        const name = decodeURIComponent(p[1]).replace(/\.png$/, '').replace(/ [A-Z]$/, '');
+        const m = findMonster(name);
+        if (!m) return send(res, 404, { error: 'No such monster' });
+        res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'max-age=86400' });
+        return res.end(spritePng(m, Math.max(1, Math.min(8, Number(url.searchParams.get('scale')) || 1))));
+      }
+      if (p[0] === 'sprites') {
+        const all = [...new Map([...MONSTERS['2024'], ...MONSTERS['2014']].map((m) => [m.n, m])).values()].sort((a, b) => a.n.localeCompare(b.n));
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        return res.end(`<!DOCTYPE html><title>Monsters · Dungeon Tiger</title><style>body{background:#14110f;color:#eae2d6;font:13px system-ui;margin:16px}
+          div{display:inline-block;width:118px;text-align:center;margin:4px;vertical-align:top}img{width:96px;height:96px;image-rendering:pixelated;background:#221d19;border-radius:8px}
+          small{color:#9c8f80;display:block}</style><h2>All ${all.length} monsters</h2>`
+          + all.map((m) => `<div><img src="/sprite/${encodeURIComponent(m.n)}.png" loading="lazy"><br>${m.n}<small>CR ${m.cr} · ${bodyPlan(m)}</small></div>`).join(''));
       }
       if (p[0] !== 'api') return send(res, 404, { error: 'Not found' });
       if (p[1] === 'state' && req.method === 'GET') {
@@ -88,6 +106,11 @@ export function startWeb({ delve, port = 3090, lan = false, settings = {} }) {
   server.on('error', (err) => console.error(`[web] couldn't open port ${port}:`, err.message));
   server.listen(port, lan ? '0.0.0.0' : '127.0.0.1', () => console.log(`[web] GM page: http://localhost:${port}`));
   return server;
+}
+
+function findMonster(name) {
+  const k = name.toLowerCase();
+  return MONSTERS['2024'].find((m) => m.n.toLowerCase() === k) || MONSTERS['2014'].find((m) => m.n.toLowerCase() === k);
 }
 
 // What the current character can do (for the GM page's turn buttons).
