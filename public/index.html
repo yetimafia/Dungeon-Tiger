@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dungeon Delve · GM</title>
+<style>
+  :root { --bg:#14110f; --panel:#1e1a17; --line:#3a322b; --ink:#eae2d6; --dim:#9c8f80; --gold:#e0b354; --red:#d0574a; --green:#6fb46a; --blue:#6a9fd4; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.45 system-ui, "Segoe UI", sans-serif; }
+  header { display:flex; align-items:center; gap:14px; padding:12px 18px; border-bottom:1px solid var(--line); flex-wrap:wrap; }
+  header h1 { margin:0; font:600 20px Georgia, serif; color:var(--gold); letter-spacing:.5px; }
+  .pill { padding:2px 10px; border-radius:99px; font-size:12px; border:1px solid var(--line); color:var(--dim); }
+  .pill.ok { color:var(--green); border-color:#355a33; } .pill.bad { color:var(--red); border-color:#5a3330; }
+  main { display:grid; grid-template-columns: 250px 1fr 340px; gap:14px; padding:14px 18px; }
+  @media (max-width: 1100px) { main { grid-template-columns: 1fr; } }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:12px 14px; margin-bottom:14px; }
+  .card h2 { margin:0 0 8px; font:600 13px system-ui; text-transform:uppercase; letter-spacing:1px; color:var(--dim); }
+  button, select, input { font:inherit; color:var(--ink); background:#2a241f; border:1px solid var(--line); border-radius:7px; padding:6px 10px; }
+  button { cursor:pointer; } button:hover:not(:disabled) { border-color:var(--gold); } button:disabled { opacity:.4; cursor:default; }
+  button.go { background:#3b2f17; border-color:#6b5426; color:var(--gold); }
+  button.warn { border-color:#5a3330; color:#f0a59c; }
+  section select, section input:not([type=number]) { max-width:100%; width:100%; }
+  label { display:block; font-size:12px; color:var(--dim); margin:6px 0 2px; }
+  .row { display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
+  .runs div { padding:6px 8px; border-radius:7px; cursor:pointer; margin-bottom:4px; border:1px solid transparent; }
+  .runs div:hover { border-color:var(--line); } .runs div.sel { border-color:var(--gold); background:#26201a; }
+  .runs small { color:var(--dim); display:block; }
+  svg text { font:12px system-ui; fill:var(--ink); }
+  #log { height:320px; overflow:auto; font-size:14px; } #log p { margin:0 0 6px; } #log b { color:var(--gold); }
+  .hero { display:grid; grid-template-columns:1fr auto; gap:2px 8px; padding:7px 0; border-bottom:1px solid var(--line); }
+  .hero:last-child { border:0; } .hero .name { font-weight:600; } .hero .sub { color:var(--dim); font-size:12px; grid-column:1 / -1; }
+  .hp { grid-column:1 / -1; height:7px; background:#2c2420; border-radius:4px; overflow:hidden; }
+  .hp i { display:block; height:100%; background:var(--green); }
+  .hero.turn { background:linear-gradient(90deg, #3b2f1744, transparent); }
+  .dead { opacity:.45; text-decoration:line-through; }
+  .foe { display:flex; justify-content:space-between; padding:3px 0; cursor:pointer; } .foe.sel { color:var(--gold); }
+  .foe.gone { opacity:.35; text-decoration:line-through; cursor:default; }
+  .empty { color:var(--dim); text-align:center; padding:40px 10px; }
+  .banner { padding:10px 14px; border-radius:8px; margin-bottom:12px; background:#26201a; border:1px solid var(--gold); }
+  .spell { display:inline-block; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🗝️ Dungeon Delve</h1>
+  <span id="nt" class="pill">Note Tiger…</span>
+  <span id="dc" class="pill">Discord…</span>
+  <span style="flex:1"></span>
+  <button onclick="refresh(true)">Check connection</button>
+</header>
+<main>
+  <section>
+    <div class="card">
+      <h2>New run</h2>
+      <label>Party size</label><input id="size" type="number" min="1" max="6" value="4" style="width:70px">
+      <label>Level</label><input id="level" type="number" min="1" max="10" value="3" style="width:70px">
+      <label>Rules</label><select id="edition"><option>2024</option><option>2014</option></select>
+      <label>Who plays</label>
+      <select id="mode"><option value="test">Test run (plays itself)</option><option value="table">At the table (you choose each action)</option></select>
+      <div class="row" style="margin-top:10px"><button class="go" onclick="newRun()">Start a run</button></div>
+      <p style="color:var(--dim);font-size:12px;margin:8px 0 0">Discord runs start with <code>/delve start</code> and show up here too.</p>
+    </div>
+    <div class="card"><h2>Runs</h2><div id="runs" class="runs"><div class="empty" style="padding:10px">None yet</div></div></div>
+  </section>
+  <section id="center"><div class="card empty">Start a run, or pick one on the left.</div></section>
+  <section id="right"></section>
+</main>
+<script>
+let sel = location.hash.slice(1) || null, data = null, target = null, busy = false;
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const md = (s) => esc(s).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
+async function api(path, body) {
+  const r = await fetch('/api/' + path, body === undefined ? {} : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const j = await r.json(); if (!r.ok) throw new Error(j.error || r.status); return j;
+}
+async function act(path, body = {}) {
+  if (busy) return; busy = true;
+  try { await api(`runs/${sel}/${path}`, body); } catch (e) { alert(e.message); }
+  busy = false; tick();
+}
+async function newRun() {
+  try {
+    const r = await api('runs', { size: $('size').value, level: $('level').value, edition: $('edition').value, mode: $('mode').value });
+    sel = r.id; if (r.usedLocal) alert('Note Tiger wasn\'t reachable, so the party is simple stand-in characters (no Party tab, no recap).');
+    refresh(); tick();
+  } catch (e) { alert(e.message); }
+}
+async function refresh(check) {
+  const s = await api('state' + (check ? '?check=1' : ''));
+  $('nt').className = 'pill ' + (s.noteTiger.ok ? 'ok' : 'bad');
+  $('nt').textContent = s.noteTiger.ok ? 'Note Tiger connected' : `Note Tiger: ${s.noteTiger.hasKey ? (s.noteTiger.error || 'not checked') : 'no key set'}`;
+  $('dc').className = 'pill ' + (s.discord === 'on' ? 'ok' : '');
+  $('dc').textContent = s.discord === 'on' ? 'Discord bot online' : 'Discord bot ' + s.discord;
+  $('edition').value = $('edition').dataset.set ? $('edition').value : s.edition; $('edition').dataset.set = 1;
+  $('runs').innerHTML = s.runs.length ? s.runs.slice().reverse().map((r) => `<div class="${r.id === sel ? 'sel' : ''}" onclick="sel='${r.id}';location.hash=sel;target=null;refresh();tick()">
+    ${esc(r.title)} <small>${{ discord: '💬 Discord', table: '🎲 table', test: '🤖 test' }[r.source] || r.source} · ${r.state === 'ended' ? esc(r.outcome) : `floor ${r.floor}, ${r.state}`}</small></div>`).join('') : '<div class="empty" style="padding:10px">None yet</div>';
+}
+function mapSvg(d) {
+  const W = 104, H = 80, bw = 78, bh = 50;
+  const seen = d.rooms.filter((r) => r.seen || r.visited);
+  const icon = { fight: '⚔️', stairs: '🪜', boss: '💀', rest: '🛏️', treasure: '💰', trap: '🪤', empty: '', start: '📍', '?': '?' };
+  let lines = '', boxes = '';
+  const at = (id) => d.rooms.find((r) => r.id === id);
+  for (const r of seen) for (const [dir, to] of Object.entries(r.exits)) {
+    if (dir !== 'e' && dir !== 's') continue; const o = at(to); if (!(o.seen || o.visited) || !(r.visited || o.visited)) continue;
+    lines += `<line x1="${r.x * W + bw / 2 + 10}" y1="${r.y * H + bh / 2 + 10}" x2="${o.x * W + bw / 2 + 10}" y2="${o.y * H + bh / 2 + 10}" stroke="#5c4f42" stroke-width="5"/>`;
+  }
+  for (const r of seen) {
+    const here = r.id === d.here, done = r.cleared || r.kind === 'empty' || r.kind === 'start';
+    const fill = here ? '#4a3a1c' : r.visited ? '#2a231d' : '#1b1714';
+    boxes += `<g ${r.visited || r.seen ? '' : ''}><rect x="${r.x * W + 10}" y="${r.y * H + 10}" width="${bw}" height="${bh}" rx="8" fill="${fill}" stroke="${here ? '#e0b354' : r.visited ? '#5c4f42' : '#3a322b'}" ${r.visited ? '' : 'stroke-dasharray="4 3"'} stroke-width="${here ? 2.5 : 1.5}"/>
+      <text x="${r.x * W + 10 + bw / 2}" y="${r.y * H + 10 + bh / 2 + 5}" text-anchor="middle" style="font-size:${here ? 13 : 16}px;opacity:${r.visited && done && r.kind !== 'stairs' && !(r.kind === 'rest' && !r.rested) ? .45 : 1}">${here ? '🧙 you' : r.visited ? (r.kind === 'treasure' && r.looted ? '' : icon[r.kind] || '') : (r.kind === 'stairs' || r.kind === 'boss' ? icon[r.kind] : '?')}</text></g>`;
+  }
+  return `<svg viewBox="0 0 ${5 * W + 14} ${4 * H + 14}" style="width:100%;max-height:360px">${lines}${boxes}</svg>`;
+}
+function render(d) {
+  const ex = d.rooms.find((r) => r.id === d.here);
+  const room = ex;
+  const fight = d.state === 'combat';
+  let ctrl = '';
+  if (d.state === 'explore') {
+    const dir = (k, l) => `<button ${room.exits[k] ? '' : 'disabled'} onclick="act('move',{dir:'${k}'})">${l}</button>`;
+    ctrl = `<div class="row">${dir('n', '⬆️ North')}${dir('w', '⬅️ West')}${dir('e', '➡️ East')}${dir('s', '⬇️ South')}</div>
+      <div class="row" style="margin-top:8px">
+        <button class="go" onclick="act('loot')">💰 Take loot</button>
+        <button onclick="act('rest')">🛏️ Rest (safe room)</button><button onclick="act('breather')">☕ Short rest</button>
+        <button class="go" onclick="act('down')">🪜 Go down</button>
+        <button onclick="act('step')">👣 Let the game take a step</button></div>`;
+  } else if (fight && d.actions) {
+    const a = d.actions, foes = d.foes.filter((f) => f.hp > 0);
+    if (!foes.some((f) => f.id === target)) target = foes.sort((x, y) => x.hp - y.hp)[0]?.id;
+    ctrl = `<p style="margin:0 0 8px"><b>${esc(d.turn.name)}'s turn</b>: click a foe on the right to target it.</p>
+      <div class="row">${a.weapons.map((w) => `<button class="go" onclick="act('act',{heroId:'${a.heroId}',type:'attack',weapon:${esc(JSON.stringify(w.name))},target})">⚔️ ${esc(w.name)} <small>${esc(w.text)}</small></button>`).join('')}</div>
+      <div class="row" style="margin-top:6px">${a.spells.map((s) => `<button ${s.ok ? '' : 'disabled'} onclick="act('act',{heroId:'${a.heroId}',type:'cast',spell:${esc(JSON.stringify(s.name))},target})">✨ ${esc(s.name)} <small>${s.level || 'c'}${s.heal ? ' 💚' : s.aoe ? ' 💥' : ''}</small></button>`).join('')}</div>
+      <div class="row" style="margin-top:6px"><button onclick="act('act',{heroId:'${a.heroId}',type:'dodge'})">🛡️ Dodge</button>
+      <button ${a.potions ? '' : 'disabled'} onclick="act('act',{heroId:'${a.heroId}',type:'potion'})">🧪 Potion (${a.potions})</button>
+      <button onclick="act('auto')">🤖 Play it for me</button></div>`;
+  } else if (fight) ctrl = `<p style="color:var(--dim);margin:0">Waiting for ${esc(d.turn?.name || '…')}${d.source === 'discord' ? ' in Discord' : ''}.</p>`;
+  const ended = d.state === 'ended' ? `<div class="banner">🏁 ${esc(d.outcome)}${d.recap ? `<br><small>${{ writing: '📝 Sent to Note Tiger: the recap will show up in #recaps.', sending: 'Sending to Note Tiger…', failed: 'Couldn\'t send to Note Tiger: ' + esc(d.recap.error), off: 'Note Tiger isn\'t connected, so no recap.' }[d.recap.status] || ''}</small>` : ''}</div>` : '';
+  $('center').innerHTML = `${ended}<div class="card"><h2>Floor ${d.floor} of ${d.floors}: ${esc(d.floorName)} ${fight ? `· ⚔️ round ${d.round}` : ''}</h2>${mapSvg(d)}
+    <p style="margin:4px 0 10px;color:var(--dim)">📍 ${esc(room.name)}</p>${d.state === 'ended' ? '' : ctrl}</div>
+    <div class="card"><h2>What happened</h2><div id="log">${d.log.map((l) => `<p>${md(l)}</p>`).join('')}</div></div>`;
+  $('log').scrollTop = 1e6;
+  const heroes = d.heroes.map((h) => `<div class="hero ${d.turn?.id === h.id ? 'turn' : ''}"><span class="name ${h.dead ? 'dead' : ''}">${esc(h.name)}</span><span>${h.dead ? '💀' : h.down ? `🩸 ${h.ds.s}✓ ${h.ds.f}✗` : `${h.hp}/${h.maxHp}`} · AC ${h.ac}</span>
+    <div class="hp"><i style="width:${Math.max(0, 100 * h.hp / h.maxHp)}%;background:${h.hp / h.maxHp < .3 ? 'var(--red)' : h.hp / h.maxHp < .6 ? 'var(--gold)' : 'var(--green)'}"></i></div>
+    <span class="sub">${esc(h.cls)}${h.playerName ? ` · ${esc(h.playerName)}` : ' · 🤖'}${h.potions ? ` · 🧪${h.potions}` : ''}${Object.keys(h.slots).length ? ` · slots ${Object.entries(h.slots).filter(([, s]) => s.max).map(([l, s]) => `${l}:${s.max - (s.used || 0)}`).join(' ')}` : ''}${h.gold ? ` · ${h.gold} gp` : ''}${h.items.length ? ` · ${esc(h.items.join(', '))}` : ''}</span></div>`).join('');
+  const foes = fight ? `<div class="card"><h2>Foes</h2>${d.foes.map((f) => `<div class="foe ${f.hp <= 0 ? 'gone' : f.id === target ? 'sel' : ''}" onclick="${f.hp > 0 ? `target='${f.id}';tick()` : ''}"><span>${f.id === target ? '🎯 ' : ''}${esc(f.name)}</span><span>${f.hp}/${f.maxHp} · AC ${f.ac}</span></div>`).join('')}</div>` : '';
+  $('right').innerHTML = `<div class="card"><h2>Party · ${d.gold} gold found</h2>${heroes}</div>${foes}
+    <div class="card"><h2>GM</h2><div class="row">
+      ${d.state === 'ended' ? '' : `<button onclick="act('autoplay',{on:${!d.autoplaying}})">${d.autoplaying ? '⏸ Stop auto-play' : '▶ Auto-play'}</button>
+      <button onclick="act('heal')">💚 Heal party</button><button ${fight ? '' : 'disabled'} onclick="act('skip')">⏭ Skip this fight</button>
+      <button ${d.floor < d.floors ? '' : 'disabled'} onclick="act('nextfloor')">🪜 Next floor</button>
+      <button class="warn" onclick="if(confirm('End this run?'))act('end')">End run</button>`}</div></div>`;
+}
+async function tick() {
+  if (!sel) return;
+  try { data = await api(`runs/${sel}`); render(data); } catch (e) { $('center').innerHTML = `<div class="card empty">${esc(e.message)}</div>`; sel = null; }
+}
+refresh(true); setInterval(tick, 1000); setInterval(refresh, 4000);
+</script>
+</body>
+</html>
