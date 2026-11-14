@@ -41,6 +41,8 @@ export class NoteTiger {
   }
   ask(question) { return this.call('POST', '/rules/ask', { question }); }
   sendRun(run) { return this.call('POST', '/runs', run); }
+  // Puts (or takes down) the "join the dungeon" link on Note Tiger's password-protected player website.
+  publishLive(body) { return this.call('POST', '/site/live', body); }
 }
 
 // Stand-ins when Note Tiger can't be reached: simple level-scaled fighters, rogues, clerics and wizards.

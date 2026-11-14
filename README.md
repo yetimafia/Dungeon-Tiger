@@ -67,6 +67,27 @@ All of these are in ⚙️ Settings. They're saved in `app\\.env` in the install
 | `TURN_SECONDS` | How long a Discord player has to choose an action (120). |
 | `KEEP_CHARACTERS` | `true` keeps the random characters in Note Tiger after the run. They're removed by default. |
 
+## The players' website
+
+Players can play from their own phone or computer instead of Discord: a website where they log in, join a lobby,
+get a random adventurer, walk the dungeon and fight on the battle map by tapping.
+
+- **Go online:** on the Dungeon Tiger window, press **🌐 Go online** (in the "Players' website" box). It uses a free
+  Cloudflare tunnel, so there's nothing to set up on your router. The first time, it downloads Cloudflare's
+  `cloudflared` program (about 40 MB) from Cloudflare's GitHub page.
+- **Sharing it:** if Note Tiger's player website is set up, a **⚔️ Join the dungeon** button appears there, behind
+  the same group password, and is updated by itself. Otherwise copy the **join link** and send it to the group.
+  Anyone with the link can play, so share it like a password. **New link** makes the old one stop working.
+- **Players' password (optional, in ⚙️ Settings):** lets people log in at the site's address without the join link.
+- The site runs on your PC, so it's online only while Dungeon Tiger is open, and its address changes each time it goes online.
+- On the site: open a lobby (level, seats, rules), friends join, the one who opened it presses Start. Pick a class or get a surprise.
+- **Your turn:** the squares you can reach light up blue. Tap one to move, tap a monster to target it, then pick an
+  action. You can move, act, and move again, then press **End turn**. Actions: weapon attacks, spells, Dash (double
+  move), Disengage (move away safely), Dodge, and Potion. Area spells like Fireball are aimed at a square: tap a square
+  to see the blast, tap it again to cast. Friends in the blast get hit too.
+- **Leaving a monster's reach** without Disengaging gives it a free swing (an opportunity attack). The same goes for monsters running from you.
+- If you don't play your turn in time (⚙️ Settings → Seconds to choose an action), the game plays it for you.
+
 ## The battle map
 
 Every fight happens on a grid of 5-foot squares the size of the room, drawn in pixel art over a floor that matches the dungeon level:

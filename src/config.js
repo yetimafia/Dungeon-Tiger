@@ -38,6 +38,9 @@ export const SETTINGS = [
   { key: 'PORT', def: '3090' },
   { key: 'GM_LAN', def: 'false' },
   { key: 'UPDATE_CHECK', def: 'true' },
+  { key: 'PLAYER_PASSWORD', secret: true, def: '' },
+  { key: 'PLAYER_PORT', def: '3091' },
+  { key: 'PLAYER_ONLINE', def: 'false' },
 ];
 export function settings() {
   const env = readEnv();

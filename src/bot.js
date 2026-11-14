@@ -139,7 +139,7 @@ export function startBot({ token, delve, turnSeconds: ts = 120 }) {
         row(new StringSelectMenuBuilder().setCustomId(`dd|${run.id}|target|${h.id}`).setPlaceholder('🎯 Target')
           .addOptions(foes.slice(0, 25).map((m) => ({ label: clip(`${m.tag}: ${m.name} (${m.hp}/${m.maxHp} HP, ${sq(m)})`, 100), value: m.id, default: m.id === target })))),
         row(new StringSelectMenuBuilder().setCustomId(`dd|${run.id}|act|${h.id}`).setPlaceholder('Choose an action').addOptions(acts)),
-        row(btn(`dd|${run.id}|dodge|${h.id}`, '🛡️ Dodge'), btn(`dd|${run.id}|back|${h.id}`, '🏃 Back off & dodge'),
+        row(btn(`dd|${run.id}|dodge|${h.id}`, '🛡️ Dodge'), btn(`dd|${run.id}|dash|${h.id}`, '💨 Dash'), btn(`dd|${run.id}|back|${h.id}`, '🏃 Disengage & back off'),
           btn(`dd|${run.id}|drink|${h.id}`, `🧪 Potion (${h.potions})`, ButtonStyle.Secondary, !h.potions),
           btn(`dd|${run.id}|auto|${h.id}`, '🤖 Play it for me')),
       ],
@@ -212,7 +212,7 @@ export function startBot({ token, delve, turnSeconds: ts = 120 }) {
     const inParty = run.heroes.some((h) => h.player === i.user.id) || i.user.id === run.ownerId;
 
     // Fights: only the character's player (or whoever started the run) can choose.
-    if (['target', 'act', 'dodge', 'back', 'drink', 'auto'].includes(what)) {
+    if (['target', 'act', 'dodge', 'dash', 'back', 'drink', 'auto'].includes(what)) {
       const h = run.hero(arg);
       if (!h || run.waiting?.heroId !== h.id) return i.reply({ content: 'That turn is over.', ...EPH });
       if (h.player !== i.user.id && i.user.id !== run.ownerId) return i.reply({ content: `That's ${h.playerName || 'someone else'}'s character.`, ...EPH });
@@ -224,6 +224,13 @@ export function startBot({ token, delve, turnSeconds: ts = 120 }) {
       if (what === 'auto') return run.autoTurn();
       if (what === 'dodge') return run.act(h.id, { type: 'dodge' });
       if (what === 'back') return run.act(h.id, { type: 'retreat' });
+      if (what === 'dash') {
+        // Dash toward the target, then the turn ends (in Discord, moving happens by itself).
+        const t = run.foes().find((m) => m.id === target);
+        run.act(h.id, { type: 'dash' }, { keepTurn: true });
+        if (t && run.waiting?.heroId === h.id) { run.closeIn(h, t, 1); run.act(h.id, { type: 'end' }); }
+        return;
+      }
       if (what === 'drink') { const down = run.standing().find((x) => x.down); return run.act(h.id, { type: 'potion', target: down?.id }); }
       const [kind, ...rest] = i.values[0].split(':');
       const name = rest.join(':');

@@ -5,6 +5,8 @@ import { Delve } from './delve.js';
 import { startWeb } from './web.js';
 import { settings, findNoteTiger, linkNoteTiger, VERSION } from './config.js';
 import { startUpdateChecks } from './updater.js';
+import { startPlayers } from './players.js';
+import { Tunnel } from './tunnel.js';
 
 console.log(`[dungeon tiger] ${VERSION} starting`);
 let s = settings();
@@ -44,12 +46,36 @@ async function apply() {
   return now;
 }
 
+// The players' website (localhost only; the tunnel puts it online).
+const tunnel = new Tunnel();
+const players = startPlayers({
+  delve, port: Number(s.PLAYER_PORT) || 3091,
+  password: () => settings().PLAYER_PASSWORD, token: () => tunnel.token, turnSeconds: () => settings().TURN_SECONDS,
+});
+const online = { publish: { state: 'off', error: '', siteUrl: '' } };
+async function publishLink() {
+  const st = tunnel.status();
+  if (!nt.ok && !(await nt.check())) { online.publish = { state: 'off', error: 'Note Tiger isn\'t connected, so share the join link yourself.', siteUrl: '' }; return; }
+  try {
+    online.publish = { state: 'sending', error: '', siteUrl: '' };
+    const r = await nt.publishLive(st.state === 'online' ? { url: st.url, token: st.token, title: 'Dungeon Tiger' } : { offline: true });
+    online.publish = { state: st.state === 'online' ? 'published' : 'off', error: '', siteUrl: r.siteUrl || '' };
+  } catch (err) { online.publish = { state: 'failed', error: err.message, siteUrl: '' }; }
+}
+tunnel.on('change', (st) => { if (st.state === 'online' || st.state === 'off') publishLink(); });
+online.status = () => ({ ...tunnel.status(), publish: online.publish, players: players.sessionsCount(), passwordSet: Boolean(settings().PLAYER_PASSWORD), port: Number(settings().PLAYER_PORT) || 3091 });
+online.start = async () => { await tunnel.start(Number(settings().PLAYER_PORT) || 3091); return online.status(); };
+online.stop = () => { tunnel.stop(); return online.status(); };
+online.newLink = () => { tunnel.newToken(); if (tunnel.state === 'online') publishLink(); return online.status(); };
+if (s.PLAYER_ONLINE === 'true') online.start();
+
 startWeb({
   delve, port: Number(s.PORT) || 3090, lan: s.GM_LAN === 'true',
   app: {
     apply,
     discord: () => ({ state: bot.state, error: bot.error, name: bot.name || '' }),
-    stop: async () => { if (bot.client) await bot.client.destroy().catch(() => {}); setTimeout(() => process.exit(0), 200); },
+    stop: async () => { tunnel.stop(); if (bot.client) await bot.client.destroy().catch(() => {}); setTimeout(() => process.exit(0), 200); },
+    online,
   },
 });
 startUpdateChecks();

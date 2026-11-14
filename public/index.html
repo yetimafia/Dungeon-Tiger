@@ -98,6 +98,7 @@
       <div class="row" style="margin-top:10px"><button class="go" onclick="newRun()">Start a run</button></div>
       <p style="color:var(--dim);font-size:12px;margin:8px 0 0">Discord runs start with <code>/dungeon start</code> and show up here too.</p>
     </div>
+    <div class="card" id="onlineCard"><h2>Players' website</h2><p class="hint">Loading…</p></div>
     <div class="card"><h2>Monsters</h2><a href="/sprites" target="_blank" style="color:var(--gold)">See all the monster sprites →</a></div>
     <div class="card"><h2>Runs</h2><div id="runs" class="runs"><div class="empty" style="padding:10px">None yet</div></div></div>
   </section>
@@ -106,6 +107,7 @@
   <section id="right"></section>
 </main>
 <script>
+let aim = null;
 let sel = location.hash.slice(1) && location.hash !== '#settings' ? location.hash.slice(1) : null, data = null, target = null, busy = false;
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -148,6 +150,10 @@ const FIELDS = [
     ['EDITION', 'D&D rules', ['2024', '2014'], ''],
     ['KEEP_CHARACTERS', 'Keep random characters in Note Tiger after a run', ['false', 'true'], ''],
   ]],
+  ['Players\' website', [
+    ['PLAYER_PASSWORD', 'Players\' password (optional)', 'password', 'Lets players log in at the site\'s address without the join link. Leave empty to allow join links only.'],
+    ['PLAYER_PORT', 'Players\' site port', 'number', 'Changing it needs a restart.'],
+  ]],
   ['This app', [
     ['PORT', 'GM page port', 'number', 'Changing it needs a restart.'],
     ['GM_LAN', 'Let other computers on my network open the GM page', ['false', 'true'], 'Changing it needs a restart.'],
@@ -180,6 +186,24 @@ async function saveSettings() {
   } catch (e) { alert(e.message); }
 }
 async function checkUpd() { await api('update/check', {}); openSettings(); refresh(); }
+async function onlineCard() {
+  let o;
+  try { o = await api('online'); } catch { return; }
+  const local = `http://localhost:${o.port}/#t=${o.token}`;
+  const st = { off: 'Offline: only this PC can open it.', downloading: 'Downloading Cloudflare\'s tunnel (first time only)…', starting: 'Going online…', online: '🟢 Online', error: `⚠️ ${esc(o.error)}` }[o.state] || o.state;
+  const pub = o.publish || {};
+  $('onlineCard').innerHTML = `<h2>Players' website</h2>
+    <p style="margin:0 0 6px">${st}</p>
+    ${o.state === 'online' ? `<p class="hint" style="margin:0 0 6px">${pub.state === 'published' ? `Posted on Note Tiger's player website${pub.siteUrl ? ` (<a href="${esc(pub.siteUrl)}" target="_blank" style="color:var(--gold)">open</a>)` : ''}: players unlock it with the group password and tap <b>Join the dungeon</b>.` : pub.state === 'sending' ? 'Posting the link on Note Tiger\'s player website…' : pub.error ? esc(pub.error) : ''}</p>
+      <label>Or share this join link</label><div class="row"><input id="jl" value="${esc(o.joinLink)}" readonly style="flex:1" onclick="this.select()"><button onclick="navigator.clipboard.writeText($('jl').value)">Copy</button></div>
+      ${o.passwordSet ? '<p class="hint">The site address alone also works with the players\' password from Settings.</p>' : ''}` : ''}
+    <div class="row" style="margin-top:8px">${o.state === 'off' || o.state === 'error' ? '<button class="go" onclick="online(\'start\')">🌐 Go online</button>' : '<button onclick="online(\'stop\')">Go offline</button>'}
+      <button onclick="if(confirm('Make a new join link? Links shared before stop working.'))online('newlink')">New link</button>
+      <a href="${local}" target="_blank" style="color:var(--gold);align-self:center">Open it here</a></div>
+    <p class="hint">${o.players} logged in. The players' site runs on this PC: it's online while Dungeon Tiger is open.</p>`;
+}
+async function online(what) { try { await api(`online/${what}`, {}); } catch (e) { alert(e.message); } onlineCard(); }
+setInterval(onlineCard, 3000); setTimeout(onlineCard, 300);
 async function refresh(check) {
   const s = await api('state' + (check ? '?check=1' : ''));
   $('nt').className = 'pill ' + (s.noteTiger.ok ? 'ok' : 'bad');
@@ -227,14 +251,21 @@ function battleView(d) {
   for (let y = 0; y < b.h; y++) for (let x = 0; x < b.w; x++) {
     const k = `${x},${y}`, u = at[k];
     const cls = u && u.side === 'm' ? 'f' : reach.has(k) && !u ? 'r' : '';
-    cells += `<div class="${cls}" title="${u ? esc(`${u.tag} ${u.name}`) : ''}" onclick="cell(${x},${y})"></div>`;
+    cells += `<div class="${aim ? 'r' : cls}" data-x="${x}" data-y="${y}" title="${u ? esc(`${u.tag} ${u.name}`) : ''}" onclick="cell(${x},${y})" ${aim ? `onmouseenter="aimAt(${x},${y})"` : ''}></div>`;
   }
   const v = `${d.log.length}-${d.turn?.id}-${b.steps}-${target}`;
   return `<div class="bf" style="--bw:${b.w}"><img src="/api/runs/${d.id}/battle.png?target=${target || ''}&v=${encodeURIComponent(v)}" alt="Battle map"><div class="cells" style="top:${100 / (b.h + 1)}%;grid-template-columns:repeat(${b.w},1fr);grid-template-rows:repeat(${b.h},1fr)">${cells}</div></div>`;
 }
+function aimAt(x, y) {
+  document.querySelectorAll('.bf .cells div').forEach((c) => {
+    const on = aim && Math.max(Math.abs(c.dataset.x - x), Math.abs(c.dataset.y - y)) <= aim.radius;
+    c.style.background = on ? '#ff7a3a55' : '';
+  });
+}
 function cell(x, y) {
   if (!data?.battle) return;
   const u = data.battle.units.find((u) => x >= u.bx && x < u.bx + u.fp && y >= u.by && y < u.by + u.fp);
+  if (aim) { const s = aim; aim = null; return act('act', { heroId: s.heroId, type: 'cast', spell: s.name, at: [x, y] }); }
   if (u && u.side === 'm') { target = u.id; return render(data); }
   if (data.actions && data.battle.reach.includes(`${x},${y}`) && !u) act('act', { heroId: data.actions.heroId, type: 'move', to: [x, y] });
 }
@@ -254,13 +285,15 @@ function render(d) {
   } else if (fight && d.actions) {
     const a = d.actions, foes = d.foes.filter((f) => f.hp > 0);
     if (!foes.some((f) => f.id === target)) target = foes.sort((x, y) => x.hp - y.hp)[0]?.id;
-    ctrl = `<p style="margin:0 0 8px"><b>${esc(d.turn.name)}'s turn</b> (${d.battle?.steps ?? 0} squares of movement left): click a blue square to move, click a monster to target it, then pick an action. Actions move you closer by themselves if needed.</p>
-      <div class="row">${a.weapons.map((w) => `<button class="go" onclick="act('act',{heroId:'${a.heroId}',type:'attack',weapon:${esc(JSON.stringify(w.name))},target})">⚔️ ${esc(w.name)} <small>${esc(w.text)}</small></button>`).join('')}</div>
-      <div class="row" style="margin-top:6px">${a.spells.map((s) => `<button ${s.ok ? '' : 'disabled'} onclick="act('act',{heroId:'${a.heroId}',type:'cast',spell:${esc(JSON.stringify(s.name))},target})">✨ ${esc(s.name)} <small>${s.level || 'c'}${s.heal ? ' 💚' : s.aoe ? ' 💥' : ''}</small></button>`).join('')}</div>
-      <div class="row" style="margin-top:6px"><button onclick="act('act',{heroId:'${a.heroId}',type:'dodge'})">🛡️ Dodge</button>
-      <button ${a.potions ? '' : 'disabled'} onclick="act('act',{heroId:'${a.heroId}',type:'potion'})">🧪 Potion (${a.potions})</button>
-      <button onclick="act('act',{heroId:'${a.heroId}',type:'retreat'})">🏃 Back off &amp; dodge</button>
-      <button onclick="act('auto')">🤖 Play it for me</button></div>`;
+    const H = `heroId:'${a.heroId}'`;
+    ctrl = `<p style="margin:0 0 8px"><b>${esc(d.turn.name)}'s turn</b>: ${a.steps} squares of movement left${a.acted ? ', action used' : ''}. ${aim ? `<b style="color:var(--gold)">Click a square to aim ${esc(aim.name)}</b> (everyone in the blast is hit, friends too). <a href="#" onclick="aim=null;render(data);return false" style="color:var(--gold)">Cancel</a>` : 'Click a blue square to move, a monster to target it, then pick an action. Actions walk you closer by themselves.'}</p>
+      ${a.acted ? '' : `<div class="row">${a.weapons.map((w) => `<button class="go" onclick="act('act',{${H},type:'attack',weapon:${esc(JSON.stringify(w.name))},target})">⚔️ ${esc(w.name)} <small>${esc(w.text)}</small></button>`).join('')}</div>
+      <div class="row" style="margin-top:6px">${a.spells.map((s) => `<button ${s.ok ? '' : 'disabled'} onclick="${s.aoe && !s.self ? `aim=${esc(JSON.stringify({ name: s.name, radius: s.radius, heroId: a.heroId }))};render(data)` : `act('act',{${H},type:'cast',spell:${esc(JSON.stringify(s.name))},target})`}">✨ ${esc(s.name)} <small>${s.level || 'c'}${s.heal ? ' 💚' : s.aoe ? ' 💥' : ''}</small></button>`).join('')}</div>
+      <div class="row" style="margin-top:6px"><button onclick="act('act',{${H},type:'dodge'})">🛡️ Dodge</button>
+      <button onclick="act('act',{${H},type:'dash'})">💨 Dash</button><button onclick="act('act',{${H},type:'disengage'})">🏃 Disengage</button>
+      <button ${a.potions ? '' : 'disabled'} onclick="act('act',{${H},type:'potion'})">🧪 Potion (${a.potions})</button>
+      <button onclick="act('auto')">🤖 Play it for me</button></div>`}
+      <div class="row" style="margin-top:6px"><button class="go" onclick="act('act',{${H},type:'end'})">⏭ End turn</button></div>`;
   } else if (fight) ctrl = `<p style="color:var(--dim);margin:0">Waiting for ${esc(d.turn?.name || '…')}${d.source === 'discord' ? ' in Discord' : ''}.</p>`;
   const ended = d.state === 'ended' ? `<div class="banner">🏁 ${esc(d.outcome)}${d.recap ? `<br><small>${{ writing: '📝 Sent to Note Tiger: the recap will show up in #recaps.', sending: 'Sending to Note Tiger…', failed: 'Couldn\'t send to Note Tiger: ' + esc(d.recap.error), off: 'Note Tiger isn\'t connected, so no recap.' }[d.recap.status] || ''}</small>` : ''}</div>` : '';
   const bf = fight && d.battle ? battleView(d) : '';

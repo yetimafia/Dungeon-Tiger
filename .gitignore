@@ -4,3 +4,4 @@ build/
 dist/
 window/rsrc_windows_amd64.syso
 logs/
+bin/

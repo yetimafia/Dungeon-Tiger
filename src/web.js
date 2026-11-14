@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { MONSTERS } from './dungeon.js';
 import { spritePng, bodyPlan, heroPng } from './sprites.js';
 import { battlePng } from './battlemap.js';
+import { spellInfo } from './game.js';
 import { SETTINGS, settings, writeEnv, findNoteTiger, linkNoteTiger, VERSION } from './config.js';
 import { updateStatus, checkForUpdate, installUpdate } from './updater.js';
 
@@ -82,8 +83,13 @@ export function startWeb({ delve, port = 3090, lan = false, app = {} }) {
         }
         writeEnv(changes);
         await app.apply?.();
-        return send(res, 200, { ...settingsView(), needsRestart: ('PORT' in changes && changes.PORT !== prev.PORT) || ('GM_LAN' in changes && changes.GM_LAN !== prev.GM_LAN), canRestart: Boolean(process.env.DT_LAUNCHER) });
+        return send(res, 200, { ...settingsView(), needsRestart: ('PORT' in changes && changes.PORT !== prev.PORT) || ('PLAYER_PORT' in changes && changes.PLAYER_PORT !== prev.PLAYER_PORT) || ('GM_LAN' in changes && changes.GM_LAN !== prev.GM_LAN), canRestart: Boolean(process.env.DT_LAUNCHER) });
       }
+      // The players' website going online
+      if (p[1] === 'online' && req.method === 'GET') return send(res, 200, app.online.status());
+      if (p[1] === 'online' && p[2] === 'start' && req.method === 'POST') { writeEnv({ PLAYER_ONLINE: 'true' }); return send(res, 200, await app.online.start()); }
+      if (p[1] === 'online' && p[2] === 'newlink' && req.method === 'POST') return send(res, 200, app.online.newLink());
+      if (p[1] === 'online' && p[2] === 'stop' && req.method === 'POST') { writeEnv({ PLAYER_ONLINE: 'false' }); return send(res, 200, app.online.stop()); }
       // Updates
       if (p[1] === 'update' && req.method === 'GET') return send(res, 200, updateStatus());
       if (p[1] === 'update' && p[2] === 'check' && req.method === 'POST') return send(res, 200, await checkForUpdate());
@@ -133,7 +139,7 @@ export function startWeb({ delve, port = 3090, lan = false, app = {} }) {
       else if (a === 'rest') run.shortRest();
       else if (a === 'breather') run.breather();
       else if (a === 'down') run.descend();
-      else if (a === 'act') run.act(b.heroId, b);
+      else if (a === 'act') run.act(b.heroId, b, { keepTurn: true });
       else if (a === 'auto') run.autoTurn();
       else if (a === 'step') { if (run.state === 'combat') run.autoTurn(); else run.exploreStep(); }
       else if (a === 'autoplay') autoplay(run, b.on);
@@ -174,13 +180,14 @@ function settingsView() {
 }
 
 // What the current character can do (for the GM page's turn buttons).
-function actionsFor(run) {
+export function actionsFor(run) {
   const cur = run.current();
   if (!cur || cur.kind !== 'h' || run.waiting?.heroId !== cur.id) return null;
   const h = cur.who;
   return {
     heroId: h.id, potions: h.potions,
     weapons: h.attacks.map((a) => ({ name: a.name, text: `${a.bonus >= 0 ? '+' : ''}${a.bonus}, ${a.dice}${h.perTurn > 1 ? ` ×${h.perTurn}` : ''}` })),
-    spells: h.spells.map((s) => ({ name: s.name, level: s.level, heal: !!s.data.heal, aoe: !!s.data.aoe, ok: s.level === 0 || Object.entries(h.slots).some(([l, x]) => Number(l) >= s.level && x.max - (x.used || 0) > 0) })),
+    spells: h.spells.map((s) => ({ name: s.name, level: s.level, heal: !!s.data.heal, aoe: !!s.data.aoe, ...spellInfo(s), ok: s.level === 0 || Object.entries(h.slots).some(([l, x]) => Number(l) >= s.level && x.max - (x.used || 0) > 0) })),
+    acted: !!h.acted, steps: h.steps, disengaged: !!h.disengaged,
   };
 }

@@ -19,6 +19,8 @@ const AREA = { fireball: 4, 'ice storm': 4, 'cone of cold': 6, 'burning hands': 
 const spellRange = (sp) => (TOUCH.test(sp.name) ? 1 : /healing word|sacred flame|toll the dead|vicious mockery|mind sliver/i.test(sp.name) ? 12 : 24);
 const weaponRange = (w) => (!w.ranged ? 1 : /javelin|dart|handaxe|dagger|trident|spear/i.test(w.name) ? 6 : 16);
 const RANGED_MON = /bow|crossbow|sling|javelin|spit|ray\b|bolt|blast|throw|rock|dart|spine|spike|beam|eye ray|tail spike|hurl/i;
+export const spellInfo = (sp) => ({ range: spellRange(sp), radius: sp.data.aoe ? AREA[sp.name.toLowerCase()] || 2 : 0, self: SELF_AREA.test(sp.name), heal: !!sp.data.heal });
+export const weaponReach = (w) => weaponRange(w);
 const nearest = (u, list) => [...list].sort((a, b) => dist(u, a) - dist(u, b) || a.hp - b.hp)[0];
 
 // ---------- the party: a Note Tiger character, made ready for fights ----------
@@ -98,6 +100,9 @@ export class Run extends EventEmitter {
     this.say(`🗝️ **${this.title}**: ${this.heroes.map((h) => `${h.name} (${h.cls})`).join(', ')} enter the dungeon.`);
     this.enterRoom(this.here);
   }
+
+  // Every change bumps the version, so the website only downloads the run when something happened.
+  emit(...args) { this.version = (this.version || 0) + 1; return super.emit(...args); }
 
   say(text, { story = true } = {}) {
     this.log.push(text);
@@ -310,7 +315,7 @@ export class Run extends EventEmitter {
       if (cur.kind === 'm') { if (cur.who.hp > 0) this.monsterTurn(cur.who); continue; }
       const h = cur.who;
       if (h.dead) continue;
-      h.dodging = false;
+      h.dodging = false; h.disengaged = false; h.acted = false; h.reactionUsed = false;
       h.steps = h.speed;
       if (h.down) { this.deathSave(h); continue; }
       if (this.auto || !h.player) { this.heroAI(h); continue; }
@@ -348,9 +353,35 @@ export class Run extends EventEmitter {
   reach(u) { return reachable(this.field(), this.units(), u, u.steps ?? u.speed); }
   stepTo(u, x, y, steps) {
     if (x === u.bx && y === u.by) return false;
+    const before = this.enemiesNext(u);
     u.bx = x; u.by = y; u.steps = Math.max(0, (u.steps ?? u.speed) - steps);
+    // Leaving an enemy's reach without Disengaging gives them a free swing (their reaction, once a round).
+    if (!u.disengaged) for (const e of before) if (dist(u, e) > 1 && !e.reactionUsed && (u.side === 'h' ? !u.dead : u.hp > 0)) this.opportunity(e, u);
     this.emit('moved', u);
     return true;
+  }
+  opportunity(a, t) {
+    a.reactionUsed = true;
+    if (a.side === 'm') {
+      const dmgOf = (x) => x.d.reduce((n, z) => n + avg(z), 0);
+      const w = a.a.filter((x) => x.b !== undefined && !RANGED_MON.test(x.n)).sort((x, y) => dmgOf(y) - dmgOf(x))[0];
+      if (!w || t.down || t.dead) return;
+      const r = d20(t.dodging ? -1 : 0);
+      const ok = r === 20 || (r !== 1 && r + w.b >= t.ac);
+      if (!ok) return this.say(`⚡ ${a.name} swipes at ${t.name} as they pull away, and misses.`);
+      const dmg = w.d.reduce((n, x) => n + roll(x, { crit: r === 20 }), 0);
+      this.hurt(t, dmg, { quiet: true, crit: r === 20 });
+      return this.say(`⚡ ${a.name} catches ${t.name} as they pull away: ${dmg} damage.${this.dropsText([t])}`);
+    }
+    if (a.down || a.dead) return;
+    const w = a.attacks.filter((x) => weaponRange(x) === 1).sort((x, y) => avg(y.dice) + y.bonus - avg(x.dice) - x.bonus)[0];
+    if (!w || t.hp <= 0) return;
+    const r = d20();
+    const ok = r === 20 || (r !== 1 && r + w.bonus >= t.ac);
+    if (!ok) return this.say(`⚡ ${a.name} swings at the fleeing ${t.name}, and misses.`);
+    const dmg = roll(w.dice, { crit: r === 20 });
+    this.damageMonster(t, dmg);
+    this.say(`⚡ ${a.name} strikes the fleeing ${t.name} (${w.name}) for ${dmg}.${this.deathsText([t])}`);
   }
   // Get within `range` squares of the target if possible. Returns true if in range afterwards.
   closeIn(u, target, range) {
@@ -363,7 +394,9 @@ export class Run extends EventEmitter {
 
   // A hero's action. act: { type: 'move'|'attack'|'cast'|'dodge'|'potion'|'retreat', weapon, spell, target, to: [x, y] }
   // Moving doesn't end the turn; everything else does (moving closer first if needed).
-  act(heroId, act) {
+  // keepTurn (website and GM page): after the action you can still move, then press End turn.
+  // Without it (Discord) the action ends the turn.
+  act(heroId, act, { keepTurn = false } = {}) {
     if (this.state !== 'combat') throw new Error('There\'s no fight going on.');
     const cur = this.current();
     if (!cur || cur.kind !== 'h' || cur.id !== heroId) throw new Error('It isn\'t that character\'s turn.');
@@ -373,21 +406,29 @@ export class Run extends EventEmitter {
       const steps = this.reach(h).get(`${x},${y}`);
       if (steps === undefined) throw new Error('Can\'t get there this turn.');
       this.stepTo(h, x, y, steps);
+      if (h.down || h.dead || !this.foes().length) { this.waiting = null; return this.next(); }
       this.emit('turn', h);
       return;
     }
-    this.waiting = null;
+    if (act.type === 'end') { this.waiting = null; return this.next(); }
+    if (h.acted) throw new Error('You\'ve used your action this turn. Move, or end your turn.');
     this.doAction(h, act);
+    h.acted = true;
+    const goOn = keepTurn && this.state === 'combat' && this.foes().length && !h.down && !h.dead && (h.steps > 0);
+    if (goOn) { this.emit('turn', h); return; }
+    this.waiting = null;
     this.next();
   }
   doAction(h, act) {
     const foes = this.foes();
     if (act.type === 'retreat') {
+      h.disengaged = true;
       const spot = retreat(this.field(), this.units(), h, foes, h.steps ?? h.speed);
       if (spot) this.stepTo(h, spot.x, spot.y, spot.s);
-      h.dodging = true;
-      return this.say(`🏃 ${h.name} backs off and takes the Dodge action.`, { story: false });
+      return this.say(`🏃 ${h.name} disengages and backs off.`, { story: false });
     }
+    if (act.type === 'disengage') { h.disengaged = true; return this.say(`🏃 ${h.name} disengages: moving away won't draw attacks this turn.`, { story: false }); }
+    if (act.type === 'dash') { h.steps = (h.steps ?? h.speed) + h.speed; return this.say(`💨 ${h.name} dashes (${h.steps * 5} ft of movement left).`, { story: false }); }
     if (act.type === 'dodge') { h.dodging = true; return this.say(`🛡️ ${h.name} takes the Dodge action.`, { story: false }); }
     if (act.type === 'potion') {
       const target = act.target ? this.hero(act.target) : h;
@@ -412,8 +453,10 @@ export class Run extends EventEmitter {
         this.heroChanged(h);
         return;
       }
-      const first = foes.find((m) => m.id === act.target) || nearest(h, foes);
       const selfArea = SELF_AREA.test(sp.name);
+      // Area spells can be aimed at a square: everyone in the blast is hit, friends too.
+      const spot = sp.data.aoe && !selfArea && Array.isArray(act.at) ? { bx: act.at[0], by: act.at[1], fp: 1, hp: 1, name: 'that spot' } : null;
+      const first = spot || foes.find((m) => m.id === act.target) || nearest(h, foes);
       // Spells that burst from the caster: step up so the closest foes are inside it.
       if (!(selfArea ? this.closeIn(h, first, AREA[sp.name.toLowerCase()] || 2) : this.closeIn(h, first, range))) {
         return this.say(`${h.name} moves toward ${first.name} but is still too far to cast ${sp.name}.`);
@@ -421,21 +464,23 @@ export class Run extends EventEmitter {
       if (slot > 0) h.slots[slot].used = (h.slots[slot].used || 0) + 1;
       const dice = spellDice(sp, h, slot);
       const radius = AREA[sp.name.toLowerCase()] || 2;
+      const inBlast = (u) => (selfArea ? dist(h, u) : dist(first, u)) <= radius || u === first;
       const targets = sp.data.aoe
-        ? foes.filter((m) => (selfArea ? dist(h, m) : dist(first, m)) <= radius || m === first)
+        ? [...foes.filter(inBlast), ...(selfArea ? [] : this.heroes.filter((x) => !x.dead && x.bx != null && inBlast(x)))]
         : /scorching ray/i.test(sp.name) ? Array(3 + Math.max(0, slot - 2)).fill(first)
           : /eldritch blast/i.test(sp.name) ? Array(1 + (h.level >= 5) + (h.level >= 11) + (h.level >= 17)).fill(first) : [first];
       const isAtk = sp.data.atk || /scorching ray/i.test(sp.name);
       const lines = [];
       for (const m of targets) {
-        if (m.hp <= 0) continue;
+        if (m.hp <= 0 && m.side !== 'h') continue;
+        if (m.side === 'h' && m.dead) continue;
         let dmg;
         if (isAtk) {
           const r = d20(this.enemiesNext(h).length && range > 1 ? -1 : 0); const hit = r === 20 || (r !== 1 && r + h.spellAtk >= m.ac);
           dmg = hit ? roll(dice, { crit: r === 20 }) : 0;
           lines.push(hit ? `${r === 20 ? 'crits' : 'hits'} ${m.name} for ${dmg}` : `misses ${m.name}`);
         } else if (sp.data.save) {
-          const save = d20() + mod(m.ab[AB.indexOf(sp.data.save)]);
+          const save = d20() + (m.side === 'h' ? m.saves[sp.data.save] : mod(m.ab[AB.indexOf(sp.data.save)]));
           dmg = roll(dice);
           if (save >= h.dc) dmg = sp.data.half ? Math.floor(dmg / 2) : 0;
           lines.push(`${m.name} ${save >= h.dc ? (dmg ? 'half-saves' : 'saves') : 'fails'}: ${dmg}`);
@@ -443,9 +488,10 @@ export class Run extends EventEmitter {
           dmg = roll(dice);
           lines.push(`${m.name} takes ${dmg}`);
         }
-        this.damageMonster(m, dmg);
+        if (m.side === 'h') this.hurt(m, dmg, { quiet: true }); else this.damageMonster(m, dmg);
       }
-      this.say(`✨ ${h.name} casts **${sp.name}**${slot ? ` (level ${slot})` : ''}: ${lines.join('; ') || 'nothing in the area'}.${this.deathsText(targets)}`);
+      const friends = targets.filter((x) => x.side === 'h');
+      this.say(`✨ ${h.name} casts **${sp.name}**${slot ? ` (level ${slot})` : ''}: ${lines.join('; ') || 'nothing in the area'}.${this.deathsText(targets.filter((x) => x.side !== 'h'))}${friends.length ? this.dropsText(friends) : ''}`);
       this.heroChanged(h);
       return;
     }
@@ -483,7 +529,7 @@ export class Run extends EventEmitter {
 
   // Monsters walk up to someone and hit them (or shoot from where they are, if they can); area attacks now and then.
   monsterTurn(m) {
-    m.steps = m.speed;
+    m.steps = m.speed; m.reactionUsed = false;
     const awake = this.heroes.filter((h) => !h.dead && !h.down && h.bx != null);
     const prey = awake.length ? awake : this.heroes.filter((h) => !h.dead && h.bx != null);
     if (!prey.length) return;
@@ -515,7 +561,8 @@ export class Run extends EventEmitter {
     let best = melee;
     if (ranged && (!melee || (dist(m, target) > 1 && (dist(m, target) <= 12) && Math.random() < 0.7))) best = ranged;
     const range = best === ranged && ranged ? 12 : 1;
-    if (!this.closeIn(m, target, range)) return this.say(`${m.name} closes in on ${target.name}.`, { story: false });
+    if (!this.closeIn(m, target, range)) return m.hp > 0 && this.say(`${m.name} closes in on ${target.name}.`, { story: false });
+    if (m.hp <= 0) return;
     const times = best.b !== undefined ? Math.max(1, m.multi) : 1;
     const lines = [];
     const hitList = [];
@@ -563,10 +610,15 @@ export class Run extends EventEmitter {
     const near = nearest(h, foes);
     const dmgSpells = can.filter((s) => !s.data.heal);
     const aoe = dmgSpells.filter((s) => s.data.aoe && s.level > 0)
-      .map((s) => ({ s, hits: Math.max(...foes.map((c) => foes.filter((f) => dist(c, f) <= (AREA[s.name.toLowerCase()] || 2)).length)) }))
+      .map((s) => {
+        const rad = AREA[s.name.toLowerCase()] || 2;
+        const safe = SELF_AREA.test(s.name) ? foes : foes.filter((c) => !this.heroes.some((x) => !x.dead && x.bx != null && dist(c, x) <= rad));
+        return { s, hits: safe.length ? Math.max(...safe.map((c) => foes.filter((f) => dist(c, f) <= rad).length)) : 0, safe };
+      })
       .filter((x) => x.hits >= 2 && (!SELF_AREA.test(x.s.name) || dist(h, near) <= (h.steps ?? h.speed) + (AREA[x.s.name.toLowerCase()] || 2))).sort((a, b) => b.hits - a.hits || b.s.level - a.s.level)[0];
     if (aoe) {
-      const center = [...foes].sort((a, b) => foes.filter((f) => dist(b, f) <= 2).length - foes.filter((f) => dist(a, f) <= 2).length)[0];
+      const pool = SELF_AREA.test(aoe.s.name) ? foes : aoe.safe;
+      const center = [...pool].sort((a, b) => foes.filter((f) => dist(b, f) <= 2).length - foes.filter((f) => dist(a, f) <= 2).length)[0];
       return this.doAction(h, { type: 'cast', spell: aoe.s.name, target: center.id });
     }
     const castBetter = h.castMod >= Math.max(h.m.str, h.m.dex);
@@ -653,7 +705,7 @@ export class Run extends EventEmitter {
         reach: this.waiting ? [...this.reach(this.hero(this.waiting.heroId)).keys()] : [], steps: this.waiting ? this.hero(this.waiting.heroId).steps : 0,
       } : null,
       turn: this.current() ? { kind: this.current().kind, id: this.current().id, name: this.current().who.name } : null,
-      round: this.combat?.round || 0, waiting: this.waiting, log: this.log.slice(-60), outcome: this.outcome, auto: this.auto, gold: this.gold, source: this.source,
+      round: this.combat?.round || 0, waiting: this.waiting, version: this.version || 0, log: this.log.slice(-60), outcome: this.outcome, auto: this.auto, gold: this.gold, source: this.source,
     };
   }
 }

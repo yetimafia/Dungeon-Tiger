@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>Dungeon Tiger</title>
+<link rel="icon" href="/icon.png">
+<style>
+  @font-face { font-family: "Pixelify Sans"; src: url(/fonts/pixelify-sans-400.woff2) format("woff2"); font-weight: 400 500; font-display: swap; }
+  @font-face { font-family: "Pixelify Sans"; src: url(/fonts/pixelify-sans-700.woff2) format("woff2"); font-weight: 600 800; font-display: swap; }
+  :root { --bg:#14110f; --panel:#1e1a17; --panel2:#2a231d; --line:#3a322b; --ink:#0b0807; --text:#eae2d6; --dim:#a39684; --gold:#e0b354; --orange:#f08a24; --red:#e0574a; --green:#6fd47a; --blue:#6aa8e8; --px:"Pixelify Sans", system-ui, sans-serif; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body { margin:0; background:var(--bg); color:var(--text); font:15px/1.45 system-ui, "Segoe UI", sans-serif;
+    background-image: linear-gradient(45deg, #ffffff05 25%, transparent 25%, transparent 75%, #ffffff05 75%), linear-gradient(45deg, #ffffff05 25%, transparent 25%, transparent 75%, #ffffff05 75%);
+    background-size: 8px 8px; background-position: 0 0, 4px 4px; padding-bottom: env(safe-area-inset-bottom); }
+  header { display:flex; align-items:center; gap:10px; padding:10px 14px; background:var(--panel); border-bottom:3px solid var(--ink); box-shadow:0 3px 0 #2a231d; position:sticky; top:0; z-index:5; }
+  header .logo { font-family:var(--px); font-weight:700; font-size:19px; text-transform:uppercase; letter-spacing:1px; display:flex; align-items:center; gap:8px; color:var(--gold); cursor:pointer; }
+  header .logo img { width:28px; height:28px; image-rendering:pixelated; }
+  header .sp { flex:1; } header small { color:var(--dim); }
+  main { max-width:1100px; margin:0 auto; padding:12px; }
+  h1, h2, h3, button, .tag { font-family:var(--px); }
+  h1 { font-size:24px; margin:4px 0 10px; } h2 { font-size:16px; margin:0 0 8px; letter-spacing:.5px; text-transform:uppercase; color:var(--dim); }
+  .card { background:var(--panel); border:2px solid var(--ink); box-shadow:4px 4px 0 var(--ink), inset 0 0 0 1px var(--line); border-radius:3px; padding:12px 14px; margin-bottom:14px; }
+  button { font-size:15px; color:var(--text); background:#2a241f; border:2px solid var(--ink); border-radius:2px; padding:8px 12px; cursor:pointer;
+    box-shadow: inset -3px -3px 0 #0000003d, inset 3px 3px 0 #ffffff1f, 2px 2px 0 var(--ink); }
+  button:active:not(:disabled) { transform:translate(2px,2px); box-shadow: inset -3px -3px 0 #0000003d, inset 3px 3px 0 #ffffff1f; }
+  button:disabled { opacity:.4; cursor:default; }
+  button.go { background:var(--orange); color:#1a0f05; } button.ok { background:#3f7a3a; } button.warn { color:#f0a59c; }
+  button small { font-family:system-ui; opacity:.8; font-size:12px; }
+  input, select { font:inherit; color:var(--text); background:#0f0d0b; border:2px solid var(--line); border-radius:2px; padding:9px 10px; width:100%; }
+  label { display:block; font-size:13px; color:var(--dim); margin:10px 0 3px; }
+  .row { display:flex; gap:7px; flex-wrap:wrap; align-items:center; }
+  .muted { color:var(--dim); } .err { color:#ff9d92; min-height:1.2em; }
+  .center { max-width:420px; margin:8vh auto; }
+  .grid2 { display:grid; grid-template-columns: minmax(0, 1fr) 320px; gap:14px; align-items:start; }
+  @media (max-width: 860px) { .grid2 { grid-template-columns: 1fr; } }
+  .hero { display:grid; grid-template-columns:36px 1fr auto; gap:2px 8px; align-items:center; padding:6px 0; border-bottom:1px solid var(--line); }
+  .hero:last-child { border:0; }
+  .spr { width:36px; height:36px; image-rendering:pixelated; background:#2a231d; border-radius:3px; grid-row: span 2; }
+  .hp { height:6px; background:#2c2420; border-radius:2px; overflow:hidden; grid-column: 2 / 4; } .hp i { display:block; height:100%; }
+  .me { color:var(--gold); } .turn { background:linear-gradient(90deg,#3b2f1766,transparent); }
+  .tag { display:inline-block; font-size:12px; padding:0 6px; border-radius:2px; background:#2a231d; border:1px solid var(--line); }
+  .bf { position:relative; width:100%; border:2px solid var(--ink); box-shadow:4px 4px 0 var(--ink); border-radius:2px; overflow:hidden; touch-action:manipulation; }
+  .bf img { width:100%; display:block; image-rendering:pixelated; }
+  .cells { position:absolute; left:0; right:0; bottom:0; display:grid; }
+  .cells div { position:relative; }
+  .cells .r { background:#6aa8e833; box-shadow: inset 0 0 0 1px #6aa8e866; cursor:pointer; }
+  .cells .f { cursor:crosshair; } .cells .t { box-shadow: inset 0 0 0 3px #ff5a4a; }
+  .cells .a { background:#ff7a3a66 !important; }
+  .panel { position:sticky; bottom:0; z-index:4; }
+  .turnbar { background:#2b2112; border:2px solid var(--gold); box-shadow:4px 4px 0 var(--ink); padding:10px 12px; border-radius:3px; margin:10px 0; }
+  .log { max-height:260px; overflow:auto; font-size:14px; } .log p { margin:0 0 5px; } .log b { color:var(--gold); }
+  .foe { display:flex; align-items:center; gap:8px; padding:3px 0; cursor:pointer; } .foe img { width:36px; height:36px; image-rendering:pixelated; background:#2a231d; border-radius:3px; }
+  .foe.sel { color:var(--gold); } .foe .grow { flex:1; }
+  .dirs { display:grid; grid-template-columns:repeat(3, 64px); gap:6px; justify-content:center; margin:8px 0; }
+  .dirs button { padding:10px 0; }
+  svg text { font:12px system-ui; fill:var(--text); }
+  .list > div { padding:8px 10px; border:2px solid var(--line); border-radius:3px; margin-bottom:8px; cursor:pointer; background:#191512; }
+  .list > div:hover { border-color:var(--gold); }
+  .pcard { display:flex; gap:10px; align-items:center; padding:8px; border:2px solid var(--line); border-radius:3px; margin-bottom:8px; background:#191512; }
+  .pcard img { width:56px; height:56px; image-rendering:pixelated; background:#2a231d; border-radius:3px; }
+  .banner { border:2px solid var(--gold); background:#26201a; padding:10px 12px; border-radius:3px; margin-bottom:12px; }
+</style>
+</head>
+<body>
+<header><div class="logo" onclick="go('home')"><img src="/icon.png" alt="">Dungeon Tiger</div><span class="sp"></span><small id="who"></small></header>
+<main id="app"><div class="center card">Loading…</div></main>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const md = (s) => esc(s).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
+const app = $('app');
+let form = { lv: '3', pt: '4', ed: '', cl: '' };
+let view = 'home', lobbyId = null, runId = null, data = null, target = null, aim = null, timer = null, busy = false, needsPassword = true;
+
+async function api(path, body) {
+  const r = await fetch('/api/' + path, body === undefined ? { credentials: 'same-origin' } : { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const j = await r.json().catch(() => ({}));
+  if (r.status === 401 && j.login) { needsPassword = j.needsPassword !== false; showLogin(); throw new Error('login'); }
+  if (!r.ok) throw new Error(j.error || r.status);
+  return j;
+}
+function say(err) { if (err.message !== 'login') alert(err.message); }
+function go(v, id) {
+  view = v; clearTimeout(timer); data = null; target = null; aim = null;
+  if (v === 'lobby') lobbyId = id; if (v === 'run') runId = id;
+  history.replaceState(null, '', v === 'home' ? '/' : `/#${v}=${id}`);
+  tick();
+}
+async function tick() {
+  clearTimeout(timer);
+  try {
+    if (view === 'home') { renderHome(await api('home')); timer = setTimeout(tick, 4000); }
+    else if (view === 'lobby') {
+      const lb = await api(`lobbies/${lobbyId}`);
+      if (lb.started) return go('run', lb.started);
+      renderLobby(lb); timer = setTimeout(tick, 2000);
+    } else if (view === 'run') {
+      const r = await api(`runs/${runId}?v=${data?.version ?? ''}`);
+      if (!r.same) { data = r; renderRun(); }
+      else if (data?.deadline) tickClock();
+      timer = setTimeout(tick, 1000);
+    }
+  } catch (e) {
+    if (e.message === 'login') return;
+    if (view !== 'home') { app.innerHTML = `<div class="card center"><p>${esc(e.message)}</p><button onclick="go('home')">Back</button></div>`; return; }
+    timer = setTimeout(tick, 5000);
+  }
+}
+
+// ---------- logging in ----------
+function showLogin(msg = '') {
+  clearTimeout(timer);
+  const t = new URLSearchParams(location.hash.slice(1)).get('t');
+  app.innerHTML = `<form class="card center" id="lf"><h1>🗝️ Join the dungeon</h1>
+    <p class="muted">A pick-up D&D dungeon crawl: get a random adventurer and fight your way down five floors with your friends.</p>
+    <label>Your name</label><input id="nm" maxlength="24" value="${esc(localStorage.getItem('dt-name') || '')}" placeholder="What should we call you?" autocomplete="nickname">
+    ${t ? '' : `<label>Group password</label><input id="pw" type="password" autocomplete="current-password">`}
+    <div class="row" style="margin-top:12px"><button class="go">Enter</button></div><p class="err" id="err">${esc(msg)}</p></form>`;
+  $('lf').onsubmit = async (e) => {
+    e.preventDefault();
+    const name = $('nm').value.trim();
+    if (!name) return ($('err').textContent = 'Type your name.');
+    localStorage.setItem('dt-name', name);
+    const r = await fetch('/api/login', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, token: t || undefined, password: t ? undefined : $('pw').value }) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) return ($('err').textContent = j.error || 'Couldn\'t log in.');
+    history.replaceState(null, '', '/');
+    $('who').textContent = j.name;
+    go('home');
+  };
+}
+
+// ---------- home ----------
+const typing = () => ['SELECT', 'INPUT'].includes(document.activeElement?.tagName) && app.contains(document.activeElement);
+function renderHome(h) {
+  if (typing() && app.querySelector('#lv')) return;
+  $('who').innerHTML = `${esc(h.me.name)} · <a href="#" onclick="logout();return false" style="color:var(--dim)">log out</a>`;
+  const lobbies = h.lobbies.map((lb) => `<div onclick="go('lobby','${lb.id}')"><b>${esc(lb.hostName)}'s party</b> <span class="tag">level ${lb.level}</span> <span class="tag">${lb.edition}</span>
+    <div class="muted">${lb.players.map((p) => esc(p.name)).join(', ')} · ${lb.players.length}/${Math.max(lb.party, lb.players.length)} seats</div></div>`).join('');
+  const runs = h.runs.map((r) => `<div onclick="go('run','${r.id}')"><b>${esc(r.title)}</b> ${r.mine ? '<span class="tag" style="color:var(--gold)">yours</span>' : ''} <span class="tag">${r.state === 'ended' ? 'over' : `floor ${r.floor}`}</span>
+    <div class="muted">${esc(r.party.join(', '))}${r.state === 'ended' ? ` · ${esc(r.outcome)}` : ''}</div></div>`).join('');
+  app.innerHTML = `<div class="grid2"><div>
+    <div class="card"><h2>Start a new run</h2>
+      <div class="row"><div style="flex:1;min-width:100px"><label>Level</label><select id="lv" onchange="form.lv=this.value">${[1,2,3,4,5,6,7,8,9,10].map((n) => `<option ${String(n) === form.lv ? 'selected' : ''}>${n}</option>`).join('')}</select></div>
+      <div style="flex:1;min-width:100px"><label>Party seats</label><select id="pt" onchange="form.pt=this.value">${[1,2,3,4,5,6].map((n) => `<option ${String(n) === form.pt ? 'selected' : ''}>${n}</option>`).join('')}</select></div>
+      <div style="flex:1;min-width:100px"><label>Rules</label><select id="ed" onchange="form.ed=this.value"><option ${(form.ed || h.edition) === '2024' ? 'selected' : ''}>2024</option><option ${(form.ed || h.edition) === '2014' ? 'selected' : ''}>2014</option></select></div></div>
+      <p class="muted" style="font-size:13px">Empty seats get companions the game plays. Everyone who joins gets a random adventurer${h.noteTiger ? ' made by Note Tiger' : ''}.</p>
+      <button class="go" onclick="newLobby()">Open a lobby</button></div>
+    <div class="card"><h2>Open lobbies</h2><div class="list">${lobbies || '<p class="muted">None right now. Open one!</p>'}</div></div>
+  </div><div><div class="card"><h2>Runs</h2><div class="list">${runs || '<p class="muted">No runs yet.</p>'}</div></div></div></div>`;
+}
+async function newLobby() { try { const lb = await api('lobbies', { level: $('lv').value, party: $('pt').value, edition: $('ed').value }); go('lobby', lb.id); } catch (e) { say(e); } }
+async function logout() { await api('logout', {}).catch(() => {}); showLogin(); }
+
+// ---------- lobby ----------
+const CLASSES = ['Barbarian', 'Bard', 'Cleric', 'Druid', 'Fighter', 'Monk', 'Paladin', 'Ranger', 'Rogue', 'Sorcerer', 'Warlock', 'Wizard'];
+function renderLobby(lb) {
+  if (typing() && app.querySelector('#cl') && !busy) return;
+  const me = lb.players.find((p) => p.me);
+  const cards = lb.players.map((p, i) => `<div class="pcard">${p.hero ? `<img src="/api/lobbies/${lb.id}/hero/${i}.png?h=${encodeURIComponent(p.hero.id)}" alt="">` : '<img src="/icon.png" style="opacity:.3" alt="">'}
+    <div style="flex:1"><b class="${p.me ? 'me' : ''}">${esc(p.name)}</b><div class="muted">${p.hero ? `${esc(p.hero.name)}: ${esc(p.hero.cls)}${p.hero.species ? `, ${esc(p.hero.species)}` : ''} · ${p.hero.hp} HP · AC ${p.hero.ac}${p.hero.spells ? ` · ${p.hero.spells} spells` : ''}` : 'rolling a character…'}</div></div></div>`).join('');
+  const fill = Math.max(0, lb.party - lb.players.length);
+  app.innerHTML = `<div class="card" style="max-width:640px;margin:0 auto"><h1>${esc(lb.hostName)}'s party</h1>
+    <p class="muted">Level ${lb.level}, ${lb.edition} rules. Get down five floors and beat what waits at the bottom.</p>
+    ${cards}${fill ? `<p class="muted">${fill} companion${fill > 1 ? 's' : ''} played by the game will fill the empty seat${fill > 1 ? 's' : ''}.</p>` : ''}
+    ${me ? `<label>Want a certain class? (optional)</label><div class="row"><select id="cl" style="flex:1" onchange="form.cl=this.value"><option value="">Surprise me</option>${CLASSES.map((c) => `<option ${form.cl === c ? 'selected' : ''}>${c}</option>`).join('')}</select>
+      <button onclick="lobbyDo('reroll',{cls:$('cl').value})">🎲 New character</button></div>` : ''}
+    <div class="row" style="margin-top:14px">${me ? '' : `<button class="go" onclick="lobbyDo('join')">🙋 Join</button>`}
+      ${lb.host ? `<button class="go" onclick="lobbyDo('start')">▶ Start the run</button><button class="warn" onclick="if(confirm('Cancel this lobby?'))lobbyDo('cancel')">Cancel</button>` : ''}
+      ${me && !lb.host ? `<button onclick="lobbyDo('leave')">Leave</button>` : ''}<button onclick="go('home')">Back</button></div>
+    ${lb.host ? '' : `<p class="muted" style="font-size:13px">${esc(lb.hostName)} starts the run when everyone's in.</p>`}</div>`;
+}
+async function lobbyDo(what, body = {}) {
+  if (busy) return; busy = true;
+  try {
+    const r = await api(`lobbies/${lobbyId}/${what}`, body);
+    busy = false;
+    if (r.started) return go('run', r.started);
+    if (r.gone || what === 'cancel') return go('home');
+    renderLobby(r);
+  } catch (e) { busy = false; say(e); }
+}
+
+// ---------- the run ----------
+async function act(path, body = {}) {
+  if (busy) return; busy = true;
+  try { await api(`runs/${runId}/${path}`, body); } catch (e) { say(e); }
+  busy = false; aim = null; tick();
+}
+const bar = (h) => `<div class="hp"><i style="width:${Math.max(0, 100 * h.hp / h.maxHp)}%;background:${h.hp / h.maxHp < .3 ? 'var(--red)' : h.hp / h.maxHp < .6 ? 'var(--gold)' : 'var(--green)'}"></i></div>`;
+function partyCard(d) {
+  return `<div class="card"><h2>Party · ${d.gold} gold</h2>${d.heroes.map((h) => `<div class="hero ${d.turn?.id === h.id ? 'turn' : ''}">
+    <img class="spr" src="/api/runs/${d.id}/hero/${encodeURIComponent(h.id)}.png" alt="">
+    <span class="${d.mine.includes(h.id) ? 'me' : ''}">${h.tag && d.state === 'combat' ? `<span class="tag" style="color:var(--blue)">${h.tag}</span> ` : ''}${esc(h.name)}</span>
+    <span>${h.dead ? '💀' : h.down ? `🩸 ${h.ds.s}✓ ${h.ds.f}✗` : `${h.hp}/${h.maxHp}`}</span>${bar(h)}
+    <span class="muted" style="font-size:12px;grid-column:2/4">${esc(h.cls)} · AC ${h.ac} · ${h.playerName ? esc(h.playerName) : '🤖'}${h.potions ? ` · 🧪${h.potions}` : ''}${Object.keys(h.slots || {}).length ? ` · slots ${Object.entries(h.slots).filter(([, s]) => s.max).map(([l, s]) => `${l}:${s.max - (s.used || 0)}`).join(' ')}` : ''}</span></div>`).join('')}</div>`;
+}
+function logCard(d) { return `<div class="card"><h2>What happened</h2><div class="log" id="log">${d.log.slice(-40).map((l) => `<p>${md(l)}</p>`).join('')}</div></div>`; }
+function floorMap(d) {
+  const W = 64, H = 52;
+  const icon = { fight: '⚔️', stairs: '🪜', boss: '💀', rest: '🛏️', treasure: '💰', trap: '🪤', empty: '', start: '📍', '?': '?' };
+  const shown = d.rooms.filter((r) => r.seen || r.visited);
+  const at = (id) => d.rooms.find((r) => r.id === id);
+  let lines = '', boxes = '';
+  for (const r of shown) for (const [dir, to] of Object.entries(r.exits)) {
+    if (dir !== 'e' && dir !== 's') continue; const o = at(to); if (!(o.seen || o.visited) || !(r.visited || o.visited)) continue;
+    lines += `<line x1="${r.x * W + 32}" y1="${r.y * H + 26}" x2="${o.x * W + 32}" y2="${o.y * H + 26}" stroke="#5c4f42" stroke-width="4"/>`;
+  }
+  for (const r of shown) {
+    const here = r.id === d.here, w = r.dims ? 26 + (r.dims.w - 7) / 9 * 28 : 48, h = r.dims ? 20 + (r.dims.h - 5) / 5 * 16 : 34;
+    boxes += `<rect x="${r.x * W + 32 - w / 2}" y="${r.y * H + 26 - h / 2}" width="${w}" height="${h}" rx="3" fill="${here ? '#4a3a1c' : r.visited ? '#2a231d' : '#1b1714'}" stroke="${here ? '#e0b354' : '#5c4f42'}" ${r.visited ? '' : 'stroke-dasharray="3 3"'} stroke-width="${here ? 2.5 : 1.5}"/>
+      <text x="${r.x * W + 32}" y="${r.y * H + 31}" text-anchor="middle" style="font-size:${here ? 11 : 13}px">${here ? '🧙' : r.visited ? (r.kind === 'treasure' && r.looted ? '' : icon[r.kind] || '') : icon[r.kind] || '?'}</text>`;
+  }
+  return `<svg viewBox="0 0 ${5 * W} ${4 * H}" style="width:100%;max-height:300px">${lines}${boxes}</svg>`;
+}
+function exploreView(d) {
+  const room = d.rooms.find((r) => r.id === d.here);
+  const can = d.inParty;
+  const dir = (k, l) => `<button ${room.exits[k] && can ? '' : 'disabled'} onclick="act('go',{dir:'${k}'})">${l}</button>`;
+  return `<div class="card"><h2>Floor ${d.floor}/${d.floors}: ${esc(d.floorName)}</h2>${floorMap(d)}<p style="margin:4px 0" class="muted">📍 ${esc(room.name)}</p>
+    ${can ? `<div class="dirs"><span></span>${dir('n', '⬆️')}<span></span>${dir('w', '⬅️')}<span></span>${dir('e', '➡️')}<span></span>${dir('s', '⬇️')}<span></span></div>
+    <div class="row" style="justify-content:center">
+      <button class="ok" onclick="act('loot')">💰 Take loot</button>
+      <button onclick="act('rest')">🛏️ Rest (safe room)</button><button onclick="act('breather')">☕ Short rest</button>
+      <button class="go" onclick="act('down')">🪜 Go down</button><button onclick="act('drink')">🧪 Potion</button></div>
+    <p class="muted" style="font-size:13px;text-align:center">Anyone in the party can choose where to go.</p>` : '<p class="muted">You\'re watching this run.</p>'}</div>`;
+}
+
+// The battle map: the picture comes from the game; the squares on top are for tapping.
+function battleView(d) {
+  const b = d.battle, a = d.actions;
+  const reach = new Set(a ? b.reach : []);
+  const at = {};
+  for (const u of b.units) for (let j = 0; j < u.fp; j++) for (let i = 0; i < u.fp; i++) at[`${u.bx + i},${u.by + j}`] = u;
+  const tCells = new Set();
+  const tu = b.units.find((u) => u.id === target);
+  if (tu) for (let j = 0; j < tu.fp; j++) for (let i = 0; i < tu.fp; i++) tCells.add(`${tu.bx + i},${tu.by + j}`);
+  let cells = '';
+  for (let y = 0; y < b.h; y++) for (let x = 0; x < b.w; x++) {
+    const k = `${x},${y}`, u = at[k];
+    const cls = [aim ? 'r' : u && u.side === 'm' ? 'f' : reach.has(k) && !u ? 'r' : '', tCells.has(k) ? 't' : ''].join(' ');
+    cells += `<div class="${cls}" data-x="${x}" data-y="${y}" onclick="cell(${x},${y})" ${aim ? `onmouseenter="aimAt(${x},${y})"` : ''}></div>`;
+  }
+  return `<div style="overflow-x:auto;margin:0 -4px;padding:0 4px 6px"><div class="bf" style="min-width:${b.w * 30}px"><img src="/api/runs/${d.id}/battle.png?v=${d.version}" alt="Battle map"><div class="cells" style="top:${100 / (b.h + 1)}%;grid-template-columns:repeat(${b.w},1fr);grid-template-rows:repeat(${b.h},1fr)">${cells}</div></div></div>`;
+}
+function aimAt(x, y) {
+  document.querySelectorAll('.cells div').forEach((c) => c.classList.toggle('a', !!aim && Math.max(Math.abs(c.dataset.x - x), Math.abs(c.dataset.y - y)) <= aim.radius));
+}
+function cell(x, y) {
+  if (!data?.battle) return;
+  const u = data.battle.units.find((u) => x >= u.bx && x < u.bx + u.fp && y >= u.by && y < u.by + u.fp);
+  if (aim) {
+    // First tap shows the blast; tapping the same square again casts (handy on phones with no hover).
+    if (!aim.at || aim.at[0] !== x || aim.at[1] !== y) { aim.at = [x, y]; aimAt(x, y); return; }
+    const s = aim; aim = null; return act('act', { heroId: s.heroId, type: 'cast', spell: s.name, at: [x, y] });
+  }
+  if (u && u.side === 'm') { target = u.id; return renderRun(); }
+  if (data.actions && data.battle.reach.includes(`${x},${y}`) && !u) act('act', { heroId: data.actions.heroId, type: 'move', to: [x, y] });
+}
+function turnBar(d) {
+  const a = d.actions;
+  if (!a) return d.state === 'combat' ? `<div class="turnbar">⏳ ${d.turn ? `<b>${esc(d.turn.name)}</b>'s turn${d.turn.kind === 'm' ? '' : d.mine.includes(d.turn.id) ? '' : '.'}` : 'Monsters are moving…'}</div>` : '';
+  const H = `heroId:'${a.heroId}'`;
+  const tname = d.foes.find((f) => f.id === target)?.name || 'the nearest foe';
+  return `<div class="turnbar"><div class="row" style="justify-content:space-between"><b style="font-family:var(--px);font-size:17px">⚔️ Your turn: ${esc(d.turn.name)}</b><span id="clock" class="muted"></span></div>
+    <p style="margin:4px 0 8px" class="muted">${aim ? `<b style="color:var(--gold)">Tap a square to aim ${esc(aim.name)}, then tap it again to cast.</b> Everyone in the blast is hit, friends too. <a href="#" onclick="aim=null;renderRun();return false" style="color:var(--gold)">Cancel</a>`
+      : `${a.steps * 5} ft of movement left (blue squares)${a.acted ? '. Action used: move if you like, then End turn.' : `. Target: <b>${esc(tname)}</b> (tap a monster to change). Attacking walks you closer by itself.`}`}</p>
+    ${a.acted ? '' : `<div class="row">${a.weapons.map((w) => `<button class="go" onclick="act('act',{${H},type:'attack',weapon:${esc(JSON.stringify(w.name))},target})">⚔️ ${esc(w.name)} <small>${esc(w.text)}</small></button>`).join('')}</div>
+    ${a.spells.length ? `<div class="row" style="margin-top:6px">${a.spells.map((s) => `<button ${s.ok ? '' : 'disabled'} onclick="${s.aoe && !s.self ? `aim=${esc(JSON.stringify({ name: s.name, radius: s.radius, heroId: a.heroId }))};renderRun()` : `act('act',{${H},type:'cast',spell:${esc(JSON.stringify(s.name))},target})`}">✨ ${esc(s.name)} <small>${s.level ? `lvl ${s.level}` : 'cantrip'}${s.heal ? ' 💚' : s.aoe ? ' 💥' : ''}</small></button>`).join('')}</div>` : ''}
+    <div class="row" style="margin-top:6px"><button onclick="act('act',{${H},type:'dash'})">💨 Dash</button><button onclick="act('act',{${H},type:'disengage'})">🏃 Disengage</button>
+      <button onclick="act('act',{${H},type:'dodge'})">🛡️ Dodge</button><button ${a.potions ? '' : 'disabled'} onclick="act('act',{${H},type:'potion'})">🧪 Potion (${a.potions})</button></div>`}
+    <div class="row" style="margin-top:8px"><button class="ok" onclick="act('act',{${H},type:'end'})">⏭ End turn</button><button onclick="act('auto')">🤖 Play it for me</button></div></div>`;
+}
+function foesCard(d) {
+  const foes = d.foes;
+  return `<div class="card"><h2>Foes</h2>${foes.map((f) => `<div class="foe ${f.hp <= 0 ? 'muted' : ''} ${f.id === target ? 'sel' : ''}" onclick="${f.hp > 0 ? `target='${f.id}';renderRun()` : ''}">
+    <img src="/sprite/${encodeURIComponent(f.n)}.png" style="${f.hp <= 0 ? 'filter:grayscale(1) brightness(.5)' : ''}"><span class="grow">${f.id === target ? '🎯 ' : ''}<span class="tag" style="color:var(--red)">${f.tag || ''}</span> ${esc(f.name)}</span>
+    <span>${f.hp > 0 ? `${f.hp}/${f.maxHp} · AC ${f.ac}` : 'down'}</span></div>`).join('')}</div>`;
+}
+function renderRun() {
+  const d = data;
+  if (!d) return;
+  if (d.state === 'combat') {
+    const live = d.foes.filter((f) => f.hp > 0);
+    if (!live.some((f) => f.id === target)) {
+      const me = d.battle?.units.find((u) => u.id === d.actions?.heroId);
+      target = (me ? live.sort((a, b) => Math.max(Math.abs(a.bx - me.bx), Math.abs(a.by - me.by)) - Math.max(Math.abs(b.bx - me.bx), Math.abs(b.by - me.by))) : live)[0]?.id;
+    }
+  }
+  const ended = d.state === 'ended' ? `<div class="banner">🏁 <b>${esc(d.outcome)}</b>${d.recap?.status === 'writing' ? '<br>📝 Note Tiger is writing the recap: it\'ll show up in #recaps.' : ''}<div class="row" style="margin-top:8px"><button onclick="go('home')">Back to the lobby list</button></div></div>` : '';
+  const main = d.state === 'combat' && d.battle
+    ? `<div class="card"><h2>Floor ${d.floor}/${d.floors} · round ${d.round}</h2>${battleView(d)}</div><div class="panel">${turnBar(d)}</div>`
+    : exploreView(d);
+  const scrolled = $('log') ? $('log').scrollTop + $('log').clientHeight >= $('log').scrollHeight - 10 : true;
+  app.innerHTML = `${ended}<div class="grid2"><div>${main}${logCard(d)}</div><div>${partyCard(d)}${d.state === 'combat' ? foesCard(d) : ''}
+    ${d.inParty && d.state !== 'ended' ? `<div class="row"><button class="warn" onclick="if(confirm('Leave this run? The game will play your character from now on.'))act('leave').then(()=>go('home'))">Leave the run</button></div>` : ''}</div></div>`;
+  if (scrolled && $('log')) $('log').scrollTop = 1e6;
+  if (d.actions && d.state === 'combat' && navigator.vibrate && !renderRun.buzzed) { navigator.vibrate(120); renderRun.buzzed = true; }
+  if (!d.actions) renderRun.buzzed = false;
+  tickClock();
+}
+function tickClock() {
+  if (!data?.deadline || !$('clock')) return;
+  const s = Math.max(0, Math.round((data.deadline - Date.now()) / 1000));
+  $('clock').textContent = `⏱ ${s}s`;
+}
+setInterval(tickClock, 1000);
+
+// Start: a link like /#run=abc opens that run; a join link (#t=…) asks only for your name.
+(async () => {
+  const h = new URLSearchParams(location.hash.slice(1));
+  if (h.get('t')) return showLogin();
+  if (h.get('run')) { view = 'run'; runId = h.get('run'); }
+  else if (h.get('lobby')) { view = 'lobby'; lobbyId = h.get('lobby'); }
+  tick();
+})();
+</script>
+</body>
+</html>
